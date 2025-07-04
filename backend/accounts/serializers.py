@@ -42,8 +42,7 @@ class ProfileSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             'id', 'first_name', 'last_name', 'username', 'email',
-            'profile_image', 'banner_image', 'phone_number',
+            'profile_image', 'phone_number',
             'date_of_birth', 'joined_at', 'is_verified',
-             'is_semi_admin'
         ]
         read_only_fields = ['joined_at', 'is_verified',  'is_semi_admin']
