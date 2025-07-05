@@ -5,6 +5,9 @@ from rest_framework.response import Response
 from rest_framework import status
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
+from rest_framework.decorators import api_view, permission_classes
+from django.utils.timezone import now
+
 
 class CreateTradeView(generics.CreateAPIView):
     serializer_class = TradeSerializer
@@ -44,3 +47,43 @@ class UserTradeListView(generics.ListAPIView):
 
     def get_queryset(self):
         return Trade.objects.filter(trader=self.request.user).order_by('-created_at')
+
+
+@api_view(['PATCH'])
+@permission_classes([permissions.IsAuthenticated])
+def update_trade_status(request, trade_id):
+    try:
+        trade = Trade.objects.get(id=trade_id)
+    except Trade.DoesNotExist:
+        return Response({"error": "Trade not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    new_status = request.data.get("status")
+
+    if new_status not in ['approved', 'order_placed', 'fills_received']:
+        return Response({"error": "Invalid status."}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Set timestamps
+    if new_status == 'approved':
+        trade.approved_at = now()
+        trade.approved_by = request.user
+    elif new_status == 'order_placed':
+        trade.order_placed_at = now()
+    elif new_status == 'fills_received':
+        trade.fills_received_at = now()
+
+    trade.status = new_status
+    trade.save()
+
+    # Notify the trader via WebSocket
+    channel_layer = get_channel_layer()
+    group_name = f"user_{trade.trader.id}"
+
+    async_to_sync(channel_layer.group_send)(
+        group_name,
+        {
+            'type': 'send_trade_update',
+            'trade': TradeSerializer(trade).data,
+        }
+    )
+
+    return Response(TradeSerializer(trade).data)
