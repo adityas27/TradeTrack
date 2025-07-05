@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 
 const CreateTrade = () => {
   const [form, setForm] = useState({
-    trade_name: '',
-    option_type: 'long',
+    name: '',
+    trade_type: 'long',
     lots: '',
     price: '',
     stop_loss: '',
@@ -28,8 +28,8 @@ const CreateTrade = () => {
     if (res.ok) {
       alert('✅ Trade created!');
       setForm({
-        trade_name: '',
-        option_type: 'long',
+        name: '',
+        trade_type: 'long',
         lots: '',
         price: '',
         stop_loss: '',
@@ -44,17 +44,17 @@ const CreateTrade = () => {
       <h2 className="text-xl font-semibold mb-4">➕ New Trade</h2>
 
       <input
-        name="trade_name"
+        name="name"
         placeholder="Trade Name"
-        value={form.trade_name}
+        value={form.name}
         onChange={handleChange}
         className="w-full border p-2 rounded"
         required
       />
 
       <select
-        name="option_type"
-        value={form.option_type}
+        name="trade_type"
+        value={form.trade_type}
         onChange={handleChange}
         className="w-full border p-2 rounded"
       >

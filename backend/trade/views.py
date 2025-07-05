@@ -11,6 +11,7 @@ class CreateTradeView(generics.CreateAPIView):
     permission_classes = [permissions.IsAuthenticated]
     
     def create(self, request, *args, **kwargs):
+        print(request.data)  # Debugging line to see incoming data
         serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():
             trade = serializer.save(trader=self.request.user)

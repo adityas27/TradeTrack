@@ -162,14 +162,13 @@ CORS_ALLOWED_ORIGINS = [
 
 ASGI_APPLICATION = 'trade_project.asgi.application'
 
+UPSTASH_REDIS_URL = f"rediss://{config('UPSTASH_REDIS_USER')}:{config('UPSTASH_REDIS_PASSWORD')}@{config('UPSTASH_REDIS_HOST')}:{config('UPSTASH_REDIS_PORT')}"
+
 CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
-            "hosts": [{
-                "address": (config("REDIS_ADD"), 6379),
-                "password": config('REDIS_PASS'),
-            }],
+            "hosts": [UPSTASH_REDIS_URL],
         },
-    }
+    },
 }
