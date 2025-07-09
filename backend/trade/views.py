@@ -1,20 +1,21 @@
-from rest_framework import generics, permissions
-from .models import Trade
-from .serializers import TradeSerializer
+import json # Not directly used here, but good to have if you debug with json.dumps
+from rest_framework import generics, permissions, status
 from rest_framework.response import Response
-from rest_framework import status
-from channels.layers import get_channel_layer
-from asgiref.sync import async_to_sync
 from rest_framework.decorators import api_view, permission_classes
 from django.utils.timezone import now
+from rest_framework.pagination import PageNumberPagination
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
 
+from .models import Trade
+from .serializers import TradeSerializer
 
 class CreateTradeView(generics.CreateAPIView):
     serializer_class = TradeSerializer
     permission_classes = [permissions.IsAuthenticated]
     
     def create(self, request, *args, **kwargs):
-        print(request.data)  # Debugging line to see incoming data
+        print(request.data)
         serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():
             trade = serializer.save(trader=self.request.user)
@@ -27,19 +28,23 @@ class CreateTradeView(generics.CreateAPIView):
     def notify_ws_clients(self, trade):
         channel_layer = get_channel_layer()
         async_to_sync(channel_layer.group_send)(
-            'trades',
+            'trades', # Send to the general 'trades' group
             {
-                'type': 'send_trade',
+                'type': 'trade_update', # <-- Consistent message type
                 'trade': TradeSerializer(trade).data
             }
         )
 
-class ManagerTradeListView(generics.ListAPIView):
-    serializer_class = TradeSerializer
-    permission_classes = [permissions.IsAdminUser]  # or custom permission for managers
+class TradePagination(PageNumberPagination):
+    page_size = 10  # This must match API_PAGE_SIZE in your React frontend
+    page_size_query_param = 'page_size'
+    max_page_size = 100
 
-    def get_queryset(self):
-        return Trade.objects.all().order_by('-created_at')
+class ManagerTradeListView(generics.ListAPIView):
+    queryset = Trade.objects.all().order_by('-created_at')
+    serializer_class = TradeSerializer
+    permission_classes = [permissions.IsAdminUser] # or custom permission for managers
+    pagination_class = TradePagination # <-- ADD THIS LINE FOR PAGINATION
 
 class UserTradeListView(generics.ListAPIView):
     serializer_class = TradeSerializer
@@ -47,7 +52,6 @@ class UserTradeListView(generics.ListAPIView):
 
     def get_queryset(self):
         return Trade.objects.filter(trader=self.request.user).order_by('-created_at')
-
 
 @api_view(['PATCH'])
 @permission_classes([permissions.IsAuthenticated])
@@ -62,7 +66,10 @@ def update_trade_status(request, trade_id):
     if new_status not in ['approved', 'order_placed', 'fills_received']:
         return Response({"error": "Invalid status."}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Set timestamps
+    # Only managers (or specific roles) should be able to update these statuses
+    # You might want to add permission checks here if not already handled by DRF permissions
+    # e.g., if not request.user.is_staff: return Response(...)
+
     if new_status == 'approved':
         trade.approved_at = now()
         trade.approved_by = request.user
@@ -74,14 +81,12 @@ def update_trade_status(request, trade_id):
     trade.status = new_status
     trade.save()
 
-    # Notify the trader via WebSocket
+    # Notify all connected clients in the 'trades' group via WebSocket
     channel_layer = get_channel_layer()
-    group_name = f"user_{trade.trader.id}"
-
     async_to_sync(channel_layer.group_send)(
-        group_name,
+        'trades', # Send to the general 'trades' group
         {
-            'type': 'send_trade_update',
+            'type': 'trade_update', # <-- Consistent message type
             'trade': TradeSerializer(trade).data,
         }
     )

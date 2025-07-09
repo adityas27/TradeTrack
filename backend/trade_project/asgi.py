@@ -1,16 +1,20 @@
 import os
-from channels.routing import ProtocolTypeRouter, URLRouter
-from django.core.asgi import get_asgi_application
+
 from channels.auth import AuthMiddlewareStack
-import trade.routing
+from channels.routing import ProtocolTypeRouter, URLRouter
+from channels.security.websocket import AllowedHostsOriginValidator
+from django.core.asgi import get_asgi_application
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'trade_project.settings')
+# Import your app's routing
+from trade import routing
 
-application = ProtocolTypeRouter({
-    "http": get_asgi_application(),
-    "websocket": AuthMiddlewareStack(
-        URLRouter(
-            trade.routing.websocket_urlpatterns
-        )
-    ),
-})
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "trade_project.settings") # Replace 'yourproject'
+
+application = ProtocolTypeRouter(
+    {
+        "http": get_asgi_application(),
+        "websocket": AllowedHostsOriginValidator(
+            AuthMiddlewareStack(URLRouter(routing.websocket_urlpatterns))
+        ),
+    }
+)
