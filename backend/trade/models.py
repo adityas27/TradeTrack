@@ -29,11 +29,13 @@ class Availability(models.Model):
     commodity = models.ForeignKey(Commodity, on_delete=models.CASCADE)
     is_available = models.BooleanField()
 
+    def __str__(self):
+        return f"{self.commodity.code}-{self.contract_month.label} ({self.contract_month.start_month} {self.contract_month.start_year} - {self.contract_month.end_month} {self.contract_month.end_year})"
+
     class Meta:
         unique_together = ('contract_month', 'commodity')
 
-    def __str__(self):
-        return f"{self.commodity.code}-{self.contract_month.label} ({self.contract_month.start_month} {self.contract_month.start_year} - {self.contract_month.end_month} {self.contract_month.end_year})"
+    
 
 
 class Trade(models.Model):
@@ -71,6 +73,6 @@ class Trade(models.Model):
 
 
     def __str__(self):
-        return self.name
+        return f"{self.name}"
 
 

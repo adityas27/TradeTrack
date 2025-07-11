@@ -7,7 +7,8 @@ from rest_framework.pagination import PageNumberPagination
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 
-from .models import Trade
+from .models import Trade, Availability
+from django.db.models import Q
 from .serializers import TradeSerializer
 
 class CreateTradeView(generics.CreateAPIView):
@@ -92,3 +93,27 @@ def update_trade_status(request, trade_id):
     )
 
     return Response(TradeSerializer(trade).data)
+
+@api_view(['GET'])
+def get_availabilities(request):
+    search = request.GET.get('search', '').strip().lower()
+
+    qs = Availability.objects.filter(is_available=True).select_related('commodity', 'contract_month')
+
+    if search:
+        qs = qs.filter(
+            Q(commodity__name__icontains=search) |
+            Q(commodity__code__icontains=search) |
+            Q(contract_month__label__icontains=search)
+        )
+
+    data = [
+        {
+            "id": availability.id,
+            "commodity_name": availability.commodity.name,
+            "commodity_code": availability.commodity.code,
+            "contract_label": availability.contract_month.label,
+        }
+        for availability in qs
+    ]
+    return Response(data)
