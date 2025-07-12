@@ -97,23 +97,26 @@ def update_trade_status(request, trade_id):
 @api_view(['GET'])
 def get_availabilities(request):
     search = request.GET.get('search', '').strip().lower()
-
     qs = Availability.objects.filter(is_available=True).select_related('commodity', 'contract_month')
 
     if search:
-        qs = qs.filter(
-            Q(commodity__name__icontains=search) |
-            Q(commodity__code__icontains=search) |
-            Q(contract_month__label__icontains=search)
-        )
+        keywords = search.split()
+
+        for kw in keywords:
+            qs = qs.filter(
+                Q(commodity__name__icontains=kw) |
+                Q(commodity__code__icontains=kw) |
+                Q(contract_month__label__icontains=kw)
+            )
 
     data = [
         {
-            "id": availability.id,
-            "commodity_name": availability.commodity.name,
-            "commodity_code": availability.commodity.code,
-            "contract_label": availability.contract_month.label,
+            "id": a.id,
+            "commodity_name": a.commodity.name,
+            "commodity_code": a.commodity.code,
+            "contract_label": a.contract_month.label,
         }
-        for availability in qs
+        for a in qs.distinct()[:20]  # limit to 20 results for speed
     ]
+
     return Response(data)
