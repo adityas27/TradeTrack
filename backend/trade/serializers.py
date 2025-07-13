@@ -23,7 +23,8 @@ class TradeSerializer(serializers.ModelSerializer):
             'approved_at',
             'order_placed_at',
             'fills_received_at',
-
+            'is_closed',
+            'ratio',
             # Custom added fields:
             'trader_username',
             'approved_by_username',

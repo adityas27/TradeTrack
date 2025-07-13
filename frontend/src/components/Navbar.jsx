@@ -20,9 +20,10 @@ export default function Navbar() {
   }, [location]);
 
   const navLinks = [
-    { to: '/', label: 'Courses' },
-    { to: '/dashboard', label: 'Dashboard' },
-    { to: '/profile', label: 'Profile' }
+    { to: '/', label: 'All Trades' },
+    { to: '/my-trades', label: 'My Trades' },
+    { to: '/profile', label: 'Profile' },
+    { to: '/apply-trade', label: 'Add Trade' }
   ];
 
   return (

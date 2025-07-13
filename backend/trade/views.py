@@ -120,3 +120,72 @@ def get_availabilities(request):
     ]
 
     return Response(data)
+
+@api_view(['PATCH'])
+@permission_classes([permissions.IsAuthenticated])
+def update_close(request, trade_id):
+    try:
+        trade = Trade.objects.get(id=trade_id)
+    except Trade.DoesNotExist:
+        return Response({"error": "Trade not found."}, status=status.HTTP_404_NOT_FOUND)
+
+
+    if trade.is_closed:
+        return Response({"error": "Request is already sent."}, status=status.HTTP_400_BAD_REQUEST)
+
+    trade.close_requested_at = now()
+    trade.is_closed = True
+    trade.save()
+
+    # Notify all connected clients in the 'trades' group via WebSocket
+    channel_layer = get_channel_layer()
+    async_to_sync(channel_layer.group_send)(
+        'trades', # Send to the general 'trades' group
+        {
+            'type': 'trade_update', # <-- Consistent message type
+            'trade': TradeSerializer(trade).data,
+        }
+    )
+
+    return Response(TradeSerializer(trade).data)
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def my_trades(request):
+    trades = Trade.objects.filter(trader=request.user).order_by('-created_at')
+    serializer = TradeSerializer(trades, many=True)
+    return Response(serializer.data)
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAdminUser])
+def pending_close_requests(request):
+    trades = Trade.objects.filter(is_closed=True, close_accepted=False).order_by('-close_requested_at')
+    serializer = TradeSerializer(trades, many=True)
+    return Response(serializer.data)
+
+@api_view(['PATCH'])
+@permission_classes([permissions.IsAdminUser])
+def accept_close(request, trade_id):
+    try:
+        trade = Trade.objects.get(id=trade_id)
+    except Trade.DoesNotExist:
+        return Response({"error": "Trade not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    if not trade.is_closed or trade.close_accepted:
+        return Response({"error": "Invalid close request."}, status=status.HTTP_400_BAD_REQUEST)
+
+    trade.close_accepted = True
+    trade.status = "closed"  # Optional: update status
+    trade.save()
+
+    # WebSocket notification to all managers
+    channel_layer = get_channel_layer()
+    async_to_sync(channel_layer.group_send)(
+        'trades',
+        {
+            'type': 'trade_update',
+            'trade': TradeSerializer(trade).data
+        }
+    )
+
+    return Response(TradeSerializer(trade).data)

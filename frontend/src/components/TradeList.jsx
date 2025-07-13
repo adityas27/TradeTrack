@@ -64,6 +64,7 @@ const TradeList = () => {
             // If the trade exists, create a new array with the updated trade at its position
             const newTrades = [...prevTrades];
             newTrades[existingTradeIndex] = updatedTrade;
+            console.log("Trade updated in the list:", updatedTrade);
             return newTrades;
           } else {
             // If it's a new trade, or a trade that just got created/changed 
@@ -103,7 +104,7 @@ const TradeList = () => {
       if (!res.ok) {
         throw new Error(`HTTP error! status: ${res.status}`);
       }
-
+      console.log(res.status)
       // NO MANUAL SETTRADES HERE!
       // The WebSocket will handle updating the UI when the backend broadcasts the change.
       console.log("Status update request sent. Awaiting WebSocket confirmation.");
@@ -160,7 +161,7 @@ const TradeList = () => {
               <thead className="bg-gray-50">
                 <tr>
                   {[
-                    "Trade Name", "Type", "Lots", "Price", "Stop Loss", "Trader",
+                    "Trade Name","Contract Month", "Type", "Lots", "Price", "Stop Loss", "Trader",
                     "Status", "Approved By", "Created At", "Approved At",
                     "Order Placed At", "Fills Received At", "Actions",
                   ].map((col) => (
@@ -173,7 +174,8 @@ const TradeList = () => {
               <tbody className="bg-white divide-y divide-gray-200">
                 {trades.map((trade) => (
                   <tr key={trade.id} className="hover:bg-gray-50 transition-colors duration-150 ease-in-out">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{trade.name}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{trade.display_name}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{trade.contract_month}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 capitalize">{trade.trade_type}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{trade.lots}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">₹{trade.price}</td>

@@ -70,6 +70,14 @@ class Trade(models.Model):
     approved_at = models.DateTimeField(null=True, blank=True)  # Approved
     order_placed_at = models.DateTimeField(null=True, blank=True)
     fills_received_at = models.DateTimeField(null=True, blank=True)
+    close_requested_at = models.DateTimeField(null=True, blank=True)  # When the trade was closed
+
+    # Additional fields 
+    is_closed = models.BooleanField(default=False)  # Indicates if the trade is closed
+    close_accepted = models.BooleanField(default=False)  # Indicates if the close request was accepted
+    ratio = models.DecimalField(max_digits=10, decimal_places=2, default=100.00) # Field for ratio
+    fills_recivied_for = models.DecimalField(max_digits=10, decimal_places=2, default=0.00) # Field for fills received (lots)   
+    fills_received_of = models.DecimalField(max_digits=10, decimal_places=2, default=0.00) # Field for fills received of(price)
 
 
     def __str__(self):

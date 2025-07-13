@@ -5,10 +5,11 @@ import Profile from "./components/Profile";
 import EditProfile from "./components/EditProfile";
 import TradeApply from "./components/TradeApply";
 import TradeList from "./components/TradeList";
-// import MyTrades from "./components/MyTrades";
+import MyTrades from "./components/MyTrades";
 import Login from "./components/Login";
 import Signup from "./components/Signup";
 import NotFound from "./components/404";
+import CloseRequests from "./components/CloseRequests";
 
 function App() {
   return (
@@ -20,7 +21,8 @@ function App() {
           <Route path="/profile" element={<Profile />} />
           <Route path="/profile/edit" element={<EditProfile />} />
           <Route path="/apply-trade" element={<TradeApply />} />
-          {/* <Route path="/my-trades" element={<MyTrades />} /> */}
+          <Route path="/my-trades" element={<MyTrades />} />
+          <Route path="/close_req" element={<CloseRequests />} />
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
           <Route path="*" element={<NotFound />} />
