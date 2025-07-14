@@ -175,7 +175,6 @@ def accept_close(request, trade_id):
         return Response({"error": "Invalid close request."}, status=status.HTTP_400_BAD_REQUEST)
 
     trade.close_accepted = True
-    trade.status = "closed"  # Optional: update status
     trade.save()
 
     # WebSocket notification to all managers
@@ -189,3 +188,10 @@ def accept_close(request, trade_id):
     )
 
     return Response(TradeSerializer(trade).data)
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAdminUser])
+def closed_trades(request):
+    trades = Trade.objects.filter(is_closed=True, close_accepted=True).order_by('-fills_received_at')
+    serializer = TradeSerializer(trades, many=True)
+    return Response(serializer.data)
