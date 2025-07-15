@@ -10,7 +10,7 @@ import Login from "./components/Login";
 import Signup from "./components/Signup";
 import NotFound from "./components/404";
 import CloseRequests from "./components/CloseRequests";
-
+import ClosedTrades from "./components/ClosedTrades";
 function App() {
   return (
     <Router>
@@ -22,6 +22,7 @@ function App() {
           <Route path="/profile/edit" element={<EditProfile />} />
           <Route path="/apply-trade" element={<TradeApply />} />
           <Route path="/my-trades" element={<MyTrades />} />
+          <Route path="/closed" element={<ClosedTrades />} />
           <Route path="/close_req" element={<CloseRequests />} />
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
