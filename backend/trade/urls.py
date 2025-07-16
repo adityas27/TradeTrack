@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import (CreateTradeView, ManagerTradeListView, UserTradeListView, update_trade_status, get_availabilities, update_close, my_trades,
+from .views import (CreateTradeView, ManagerTradeListView, UserTradeListView, update_trade_status, get_availabilities, update_close, my_trades, set_settlement_price,
                     pending_close_requests, accept_close, closed_trades)
 
 urlpatterns = [
@@ -13,5 +13,7 @@ urlpatterns = [
     path("trades/close-requests/", pending_close_requests, name="pending-close-requests"),
     path("trades/<int:trade_id>/accept-close/", accept_close, name="accept-close"),
     path("trades/closed/", closed_trades, name="closed-trades"),
+    path('trades/<int:pk>/set_settlement/', set_settlement_price, name='set-settlement'),
+
 
 ]

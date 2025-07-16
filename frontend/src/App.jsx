@@ -11,6 +11,7 @@ import Signup from "./components/Signup";
 import NotFound from "./components/404";
 import CloseRequests from "./components/CloseRequests";
 import ClosedTrades from "./components/ClosedTrades";
+import SettlementModal from "./components/SettlementModal";
 function App() {
   return (
     <Router>
@@ -26,6 +27,7 @@ function App() {
           <Route path="/close_req" element={<CloseRequests />} />
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
+          <Route path="/settlement_price" element={<SettlementModal />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </div>

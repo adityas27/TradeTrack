@@ -195,3 +195,24 @@ def closed_trades(request):
     trades = Trade.objects.filter(is_closed=True, close_accepted=True).order_by('-fills_received_at')
     serializer = TradeSerializer(trades, many=True)
     return Response(serializer.data)
+
+@api_view(['PATCH'])
+@permission_classes([permissions.IsAuthenticated])
+def set_settlement_price(request, pk):
+    try:
+        trade = Trade.objects.get(pk=pk)
+
+        if not request.user.is_staff:  # or custom manager check
+            return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
+
+        settlement_price = request.data.get("settlement_price")
+        if settlement_price is None:
+            return Response({"error": "Settlement price required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        trade.settlement_price = float(settlement_price)
+        trade.calculate_profit()
+
+        return Response({"message": "Settlement price set", "profit": trade.profit}, status=status.HTTP_200_OK)
+
+    except Trade.DoesNotExist:
+        return Response({"error": "Trade not found"}, status=status.HTTP_404_NOT_FOUND)

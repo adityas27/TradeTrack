@@ -79,6 +79,18 @@ class Trade(models.Model):
     fills_recivied_for = models.DecimalField(max_digits=10, decimal_places=2, default=0.00) # Field for fills received (lots)   
     fills_received_of = models.DecimalField(max_digits=10, decimal_places=2, default=0.00) # Field for fills received of(price)
 
+    # Profit feature
+    settlement_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)  # Price at which the trade was settled
+    profit = models.FloatField(null=True, blank=True)
+
+    
+    def calculate_profit(self):
+        if self.settlement_price is not None and self.fills_received_for:
+            if self.option_type == 'long':
+                self.profit = (self.settlement_price - self.price) * self.fills_received_for
+            elif self.option_type == 'short':
+                self.profit = (self.price - self.settlement_price) * self.fills_received_for
+            self.save()    
 
     def __str__(self):
         return f"{self.name}"
