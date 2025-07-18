@@ -7,9 +7,10 @@ from rest_framework.pagination import PageNumberPagination
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 
-from .models import Trade, Availability
+from .models import Trade, Availability, Profit
 from django.db.models import Q
-from .serializers import TradeSerializer
+from .serializers import TradeSerializer, ProfitSerializer
+from django.shortcuts import get_object_or_404
 
 class CreateTradeView(generics.CreateAPIView):
     serializer_class = TradeSerializer
@@ -216,3 +217,37 @@ def set_settlement_price(request, pk):
 
     except Trade.DoesNotExist:
         return Response({"error": "Trade not found"}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def create_profit(request, trade_id):
+    trade = get_object_or_404(Trade, id=trade_id)
+    
+    initial_data = {
+        'trade': trade.id,
+        'entry': trade.price,
+        **request.data
+    }
+
+    serializer = ProfitSerializer(data=initial_data)
+    serializer.is_valid(raise_exception=True)
+    serializer.save()
+    
+    return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+@api_view(['PATCH'])
+@permission_classes([permissions.IsAuthenticated])
+def update_profit(request, pk):
+    profit_instance = get_object_or_404(Profit, id=pk)
+
+    data_to_update = {}
+    if 'exit_price' in request.data:
+        data_to_update['exit_price'] = request.data['exit_price']
+    if 'settlement_price_unbooked' in request.data:
+        data_to_update['settlement_price_unbooked'] = request.data['settlement_price_unbooked']
+
+    serializer = ProfitSerializer(profit_instance, data=data_to_update, partial=True)
+    serializer.is_valid(raise_exception=True)
+    serializer.save()
+
+    return Response(serializer.data)

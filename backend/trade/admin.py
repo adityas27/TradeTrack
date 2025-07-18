@@ -1,6 +1,9 @@
 from django.contrib import admin
 from .models import Trade
-from .models import Commodity, ContractMonth, Availability
+from .models import Commodity, ContractMonth, Availability, Profit
+
+# Register your models here.
+admin.site.register(Profit)
 
 @admin.register(Commodity)
 class CommodityAdmin(admin.ModelAdmin):

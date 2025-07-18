@@ -43,8 +43,9 @@ INSTALLED_APPS = [
     'channels',  # for WebSocket support
 
     # our apps
-    'trade', 
+    'trade.apps.TradeConfig', 
     'accounts',
+
 ]
 
 MIDDLEWARE = [

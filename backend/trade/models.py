@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth import get_user_model
+from decimal import Decimal
 
 User = get_user_model()
 
@@ -77,22 +78,47 @@ class Trade(models.Model):
     close_accepted = models.BooleanField(default=False)  # Indicates if the close request was accepted
     ratio = models.DecimalField(max_digits=10, decimal_places=2, default=100.00) # Field for ratio
     fills_recivied_for = models.DecimalField(max_digits=10, decimal_places=2, default=0.00) # Field for fills received (lots)   
-    fills_received_of = models.DecimalField(max_digits=10, decimal_places=2, default=0.00) # Field for fills received of(price)
-
-    # Profit feature
-    settlement_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)  # Price at which the trade was settled
-    profit = models.FloatField(null=True, blank=True)
-
-    
-    def calculate_profit(self):
-        if self.settlement_price is not None and self.fills_received_for:
-            if self.option_type == 'long':
-                self.profit = (self.settlement_price - self.price) * self.fills_received_for
-            elif self.option_type == 'short':
-                self.profit = (self.price - self.settlement_price) * self.fills_received_for
-            self.save()    
+    fills_received_of = models.DecimalField(max_digits=10, decimal_places=2, default=0.00) # Field for fills received of(price)   
 
     def __str__(self):
         return f"{self.name}"
 
+class Profit(models.Model):
+    trade = models.ForeignKey(Trade, on_delete=models.CASCADE, related_name='profits')
+    entry = models.DecimalField(max_digits=10, decimal_places=2)  # Entry price of the trade
+    booked_lots = models.PositiveIntegerField()
+    unbooked_lots = models.PositiveIntegerField()
+    exit_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)  # Price at which the trade was settled for booked lots
+    settlement_price_unbooked = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)  # Price at which the trade was settled for unbooked lots
+    profit = models.FloatField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField()
+
+    def __init__(self, *args, **kwargs):
+        # Call the parent's __init__ first to ensure all fields are set up
+        super().__init__(*args, **kwargs)
+        
+        # Store the initial values of the fields we want to monitor.
+        # This runs when an object is created (Profit()) or loaded from DB (Profit.objects.get()).
+        # For new objects, self.pk will be None, and these attributes will be None, which is fine.
+        self._original_exit_price = self.exit_price
+        self._original_settlement_price_unbooked = self.settlement_price_unbooked
+
+    def _calculate_profit(self):
+        total_profit = Decimal('0.00')
+
+        if self.exit_price is not None and self.booked_lots is not None and self.booked_lots > 0:
+            profit_per_lot = self.exit_price - self.entry
+            total_profit += profit_per_lot * self.booked_lots
+
+        if self.settlement_price_unbooked is not None and self.unbooked_lots is not None and self.unbooked_lots > 0:
+            profit_per_lot = self.settlement_price_unbooked - self.entry
+            total_profit += profit_per_lot * self.unbooked_lots
+            
+        return float(total_profit) # Convert to float for the profit field
+        
+
+
+    def __str__(self):
+        return f"Profit for {self.trade.name} - {self.profit}"
 

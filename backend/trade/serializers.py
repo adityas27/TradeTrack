@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Trade
+from .models import Trade, Profit
 
 class TradeSerializer(serializers.ModelSerializer):
     trader_username = serializers.CharField(source='trader.username', read_only=True)
@@ -50,3 +50,14 @@ class TradeSerializer(serializers.ModelSerializer):
     def get_contract_month(self, obj):
         return obj.name.contract_month.label if obj.name and obj.name.contract_month else "N/A"
 
+class ProfitSerializer(serializers.ModelSerializer):
+    trade_name = serializers.CharField(source='trade.name', read_only=True)
+
+    class Meta:
+        model = Profit
+        fields = [
+            'id', 'trade', 'trade_name', 'entry', 'booked_lots', 'unbooked_lots', 
+            'exit_price', 'settlement_price_unbooked', 'profit', 
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'trade_name', 'created_at', 'updated_at', 'profit']
