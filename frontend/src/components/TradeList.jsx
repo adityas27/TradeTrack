@@ -44,7 +44,7 @@ const TradeList = () => {
 
   useEffect(() => {
     const socket = new WebSocket("ws://127.0.0.1:8000/ws/trades/");
-
+    console.log(socket)
     socket.onmessage = (event) => {
       const data = JSON.parse(event.data);
       if (data.type === "trade_update") {

@@ -6,6 +6,7 @@ class TradeSerializer(serializers.ModelSerializer):
     approved_by_username = serializers.CharField(source='approved_by.username', read_only=True)
     display_name = serializers.SerializerMethodField()
     contract_month = serializers.SerializerMethodField()
+    profit = serializers.SerializerMethodField()
 
     class Meta:
         model = Trade
@@ -30,6 +31,7 @@ class TradeSerializer(serializers.ModelSerializer):
             'approved_by_username',
             'display_name',
             'contract_month',
+            'profit',             # Latest Profit record
         ]
         read_only_fields = [
             'trader',
@@ -42,6 +44,7 @@ class TradeSerializer(serializers.ModelSerializer):
             'approved_by_username',
             'display_name',
             'contract_month',
+            'profit',
         ]
 
     def get_display_name(self, obj):
@@ -49,6 +52,9 @@ class TradeSerializer(serializers.ModelSerializer):
 
     def get_contract_month(self, obj):
         return obj.name.contract_month.label if obj.name and obj.name.contract_month else "N/A"
+    
+    def get_profit(self, obj):
+        return ProfitSerializer(obj.profits.first()).data if obj.profits.exists() else None
 
 class ProfitSerializer(serializers.ModelSerializer):
     trade_name = serializers.CharField(source='trade.name', read_only=True)
