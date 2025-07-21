@@ -1,159 +1,170 @@
 import React, { useEffect, useState } from "react";
+import axios from "axios";
 
-const SettlementModal = ({ trade, profit, onClose, onSuccess }) => {
+const SettlementModal = ({ trade, onClose, onSubmit }) => {
   const [exitPrice, setExitPrice] = useState("");
+  const [bookedLots, setBookedLots] = useState(0);
+  const [unbookedLots, setUnbookedLots] = useState(0);
   const [settlementUnbooked, setSettlementUnbooked] = useState("");
-  const [bookedLots, setBookedLots] = useState("");
-  const [unbookedLots, setUnbookedLots] = useState("");
-  const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState(null);
-  const [messageType, setMessageType] = useState(null);
+  const [messageType, setMessageType] = useState("success");
+
+  const totalLots = trade?.fills_recivied_for ?? 0;
+  const entryPrice = trade?.price ?? 0;
+  const tradeType = trade?.trade_type ?? "long";
 
   useEffect(() => {
-    // If a 'profit' object is provided (meaning we're editing an existing record)
-    if (profit && profit.id) {
-      setBookedLots(profit.booked_lots || "");
-      setUnbookedLots(profit.unbooked_lots || "");
-      setExitPrice(profit.exit_price || "");
-      setSettlementUnbooked(profit.settlement_price_unbooked || "");
-    } else {
-      // If no 'profit' object (or no ID) is provided, it's a new profit record creation
-      setBookedLots(trade.lots || ""); // Prefill with trade's total lots
-      setUnbookedLots(0); // New profit entry starts with 0 unbooked if not provided
-      setExitPrice("");
-      setSettlementUnbooked("");
-    }
-    // Clear messages when modal opens or trade/profit changes
+    const p = trade?.profit || {};
+
+    setBookedLots(p?.booked_lots ?? 0);
+    setUnbookedLots(p?.unbooked_lots ?? trade?.fills_recivied_for ?? 0);
+    setExitPrice(p?.exit_price ?? "");
+    setSettlementUnbooked(p?.settlement_price_unbooked ?? "");
     setMessage(null);
     setMessageType(null);
-  }, [trade, profit]);
+  }, [trade]);
+
+  const isValid = bookedLots + unbookedLots == totalLots;
+
+  const calculateProfit = () => {
+    if (!exitPrice || !settlementUnbooked) return null;
+
+    const bookedProfit =
+      (tradeType === "long"
+        ? exitPrice - entryPrice
+        : entryPrice - exitPrice) * bookedLots;
+
+    const unbookedProfit =
+      (tradeType === "long"
+        ? settlementUnbooked - entryPrice
+        : entryPrice - settlementUnbooked) * unbookedLots;
+
+    return (bookedProfit + unbookedProfit).toFixed(2);
+  };
 
   const handleSubmit = async () => {
-    // Basic validation
-    if (!bookedLots || !unbookedLots) {
-      setMessage('Booked and unbooked lots are required.');
-      setMessageType('error');
+    if (!isValid) {
+      setMessage("Booked + Unbooked lots must equal total lots.");
+      setMessageType("error");
       return;
     }
 
-    setLoading(true);
-    setMessage(null);
-    setMessageType(null);
-
-    // Determine endpoint and method based on the presence of a 'profit' object with an ID
-    const isUpdatingExistingProfit = profit && profit.id;
-    const endpoint = isUpdatingExistingProfit
-      ? `http://127.0.0.1:8000/api/trades/profits/${profit.id}/update/` // Endpoint for updating existing profit
-      : `http://127.0.0.1:8000/api/trades/trades/${trade.id}/profits/create/`; // Endpoint for creating new profit
-
-    const method = isUpdatingExistingProfit ? "PATCH" : "POST";
-
-    const payload = {
-      booked_lots: parseFloat(bookedLots), // Ensure numbers are sent
-      unbooked_lots: parseFloat(unbookedLots), // Ensure numbers are sent
-    };
-
-    // Conditionally add exit_price and settlement_price_unbooked if they have values
-    if (exitPrice !== "") {
-      payload.exit_price = parseFloat(exitPrice);
-    }
-    if (settlementUnbooked !== "") {
-      payload.settlement_price_unbooked = parseFloat(settlementUnbooked);
-    }
-
     try {
-      const res = await fetch(endpoint, {
-        method,
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("access")}`,
+      const response = await axios.post(
+        `http://127.0.0.1:8000/api/trades/trades/${trade.id}/profits/create/`,
+        {
+          exit_price: parseFloat(exitPrice),
+          booked_lots: bookedLots,
+          unbooked_lots: unbookedLots,
+          settlement_price_unbooked: parseFloat(settlementUnbooked),
         },
-        body: JSON.stringify(payload),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        setMessage(`Profit: ₹${parseFloat(data.profit).toFixed(2)}`);
-        setMessageType('success');
-      } else {
-        const errorData = await res.json();
-        const errorMessage = errorData.detail || JSON.stringify(errorData) || 'Failed to submit settlement';
-        setMessage(errorMessage);
-        setMessageType('error');
-      }
+        {
+    headers: {
+      Authorization: `Bearer ${localStorage.getItem("access")}`,
+      "Content-Type": "application/json",
+    },
+  }
+      );
+      setMessage("Settlement submitted successfully.");
+      setMessageType("success");
+      onSubmit?.(); // Refresh trade list if needed
     } catch (error) {
-      console.error('Settlement API error:', error);
-      setMessage('Network error. Could not connect to the server.');
-      setMessageType('error');
-    } finally {
-      setLoading(false);
+      setMessage("Error submitting settlement.");
+      setMessageType("error");
     }
-  };
-
-  const handleCloseSuccess = () => {
-    onSuccess();
-    onClose();
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50">
-      <div className="bg-white p-6 rounded-xl shadow-xl w-[350px]">
-        <h2 className="text-lg font-semibold mb-4">
-          Settle Trade #{trade.id} - {trade.name}
-        </h2>
+    <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
+      <div className="bg-white p-6 rounded-xl shadow-md w-full max-w-lg space-y-4">
+        <h2 className="text-xl font-semibold mb-2">Settle Trade</h2>
+
+        <div className="text-sm text-gray-600 bg-gray-50 p-3 rounded-md space-y-1">
+          <p><strong>Trade Type:</strong> {tradeType.toUpperCase()}</p>
+          <p><strong>Entry Price:</strong> {entryPrice}</p>
+          <p><strong>Total Fills Received:</strong> {totalLots} lots</p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium">Booked Lots</label>
+            <input
+              type="number"
+              value={bookedLots}
+              onChange={(e) => setBookedLots(Number(e.target.value))}
+              className="mt-1 w-full p-2 border rounded-md"
+              min={0}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium">Unbooked Lots</label>
+            <input
+              type="number"
+              value={unbookedLots}
+              onChange={(e) => setUnbookedLots(Number(e.target.value))}
+              className="mt-1 w-full p-2 border rounded-md"
+              min={0}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium">Exit Price (Booked)</label>
+            <input
+              type="number"
+              value={exitPrice}
+              onChange={(e) => setExitPrice(Number(e.target.value))}
+              className="mt-1 w-full p-2 border rounded-md"
+              step="0.01"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium">Settlement Price (Unbooked)</label>
+            <input
+              type="number"
+              value={settlementUnbooked}
+              onChange={(e) => setSettlementUnbooked(Number(e.target.value))}
+              className="mt-1 w-full p-2 border rounded-md"
+              step="0.01"
+            />
+          </div>
+        </div>
+
+        {!isValid && (
+          <p className="text-red-600 text-sm mt-2">
+            ❌ Booked + Unbooked lots must equal total lots.
+          </p>
+        )}
+
+        {calculateProfit() !== null && (
+          <p className="text-green-700 text-sm mt-2">
+            💰 Estimated Profit: <strong>{calculateProfit()}</strong>
+          </p>
+        )}
 
         {message && (
-          <div
-            className={`px-4 py-3 rounded-md text-sm font-medium mb-4 ${
-              messageType === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+          <p
+            className={`text-sm mt-2 ${
+              messageType === "success" ? "text-green-600" : "text-red-600"
             }`}
           >
             {message}
-          </div>
+          </p>
         )}
 
-        <label className="block text-sm mb-1 text-gray-700">Booked Lots</label>
-        <input
-          type="number"
-          className="border p-2 mb-2 w-full rounded-md"
-          value={bookedLots}
-          onChange={(e) => setBookedLots(e.target.value)}
-          required
-        />
-
-        <label className="block text-sm mb-1 text-gray-700">Unbooked Lots</label>
-        <input
-          type="number"
-          className="border p-2 mb-2 w-full rounded-md"
-          value={unbookedLots}
-          onChange={(e) => setUnbookedLots(e.target.value)}
-          required
-        />
-
-        <label className="block text-sm mb-1 text-gray-700">Exit Price (booked)</label>
-        <input
-          type="number"
-          className="border p-2 mb-2 w-full rounded-md"
-          value={exitPrice}
-          onChange={(e) => setExitPrice(e.target.value)}
-          step="0.01"
-        />
-
-        <label className="block text-sm mb-1 text-gray-700">Settlement Price (unbooked)</label>
-        <input
-          type="number"
-          className="border p-2 mb-4 w-full rounded-md"
-          value={settlementUnbooked}
-          onChange={(e) => setSettlementUnbooked(e.target.value)}
-          step="0.01"
-        />
-
-        <div className="flex justify-end gap-2">
-          <button className="bg-gray-400 text-white px-3 py-1 rounded-md" onClick={onClose} disabled={loading}>
+        <div className="flex justify-end gap-2 pt-4">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-md"
+          >
             Cancel
           </button>
-          <button className="bg-blue-600 text-white px-3 py-1 rounded-md" onClick={handleSubmit} disabled={loading}>
-            {loading ? 'Submitting...' : 'Submit'}
+          <button
+            onClick={handleSubmit}
+            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+          >
+            Submit Settlement
           </button>
         </div>
       </div>

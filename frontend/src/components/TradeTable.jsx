@@ -23,7 +23,7 @@ const TradesTable = () => {
 
   const openSettleModal = (trade) => {
     setSelectedTrade(trade);
-    console.log(trade.profit.profit)
+    console.log(trade)
     const existingProfit = trade.profit; // update if your serializer nests them
     console.log(existingProfit)
     setProfitId(existingProfit?.id || null);

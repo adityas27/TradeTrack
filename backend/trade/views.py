@@ -78,6 +78,8 @@ def update_trade_status(request, trade_id):
     elif new_status == 'order_placed':
         trade.order_placed_at = now()
     elif new_status == 'fills_received':
+        trade.fills_recivied_for = request.data.get("fills_received_for", trade.fills_recivied_for)
+        trade.fills_received_of = request.data.get("fills_received_of", trade.fills_received_of)
         trade.fills_received_at = now()
 
     trade.status = new_status
@@ -241,6 +243,10 @@ def update_profit(request, pk):
     profit_instance = get_object_or_404(Profit, id=pk)
 
     data_to_update = {}
+    if 'exit_price' in request.data:
+        data_to_update['exit_price'] = request.data['exit_price']
+    if 'settlement_price_unbooked' in request.data:
+        data_to_update['settlement_price_unbooked'] = request.data['settlement_price_unbooked']
     if 'exit_price' in request.data:
         data_to_update['exit_price'] = request.data['exit_price']
     if 'settlement_price_unbooked' in request.data:

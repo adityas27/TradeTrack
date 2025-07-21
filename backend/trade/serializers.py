@@ -32,6 +32,8 @@ class TradeSerializer(serializers.ModelSerializer):
             'display_name',
             'contract_month',
             'profit',             # Latest Profit record
+            'fills_recivied_for',
+            'fills_received_of',
         ]
         read_only_fields = [
             'trader',
