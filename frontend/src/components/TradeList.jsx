@@ -226,6 +226,17 @@ const TradeList = () => {
                           Mark Filled
                         </button>
                       )}
+                      {trade.status === "partial_fills_received" && (
+                        <button
+                          onClick={() => {
+                            setSelectedTrade(trade);
+                            setModalOpen(true);
+                          }}
+                          className="text-xs bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded"
+                        >
+                          Add more fills
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}

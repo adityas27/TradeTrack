@@ -75,14 +75,20 @@ def update_trade_status(request, trade_id):
     if new_status == 'approved':
         trade.approved_at = now()
         trade.approved_by = request.user
+        trade.status = new_status
+
     elif new_status == 'order_placed':
         trade.order_placed_at = now()
+        trade.status = new_status
+
     elif new_status == 'fills_received':
-        trade.fills_recivied_for = request.data.get("fills_received_for", trade.fills_recivied_for)
-        trade.fills_received_of = request.data.get("fills_received_of", trade.fills_received_of)
+        if trade.fills_recivied_for+ int(request.data.get("fills_received_for")) > trade.lots:
+            return Response({"error": "Cannot exceed total lots."}, status=status.HTTP_400_BAD_REQUEST)
+        trade.fills_recivied_for = trade.fills_recivied_for+int(request.data.get("fills_received_for"))
+        trade.fills_received_of = request.data.get("fills_received_of")
         trade.fills_received_at = now()
 
-    trade.status = new_status
+    # trade.status = new_status
     trade.save()
 
     # Notify all connected clients in the 'trades' group via WebSocket
