@@ -69,3 +69,28 @@ class ProfitSerializer(serializers.ModelSerializer):
             'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'trade_name', 'created_at', 'updated_at', 'profit']
+
+from .models import Exit
+
+class ExitSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Exit
+        fields = [
+            'id', 'trade', 'requested_exit_lots', 'recieved_lots',
+            'exit_price', 'profit_loss', 'exit_status', 'created_at'
+        ]
+        read_only_fields = ['profit_loss', 'exit_status']
+
+    def validate(self, data):
+        # Ensure received_lots do not exceed requested or trade total lots
+        trade = data.get('trade') or self.instance.trade
+        requested = data.get('requested_exit_lots', getattr(self.instance, 'requested_exit_lots', None))
+        received = data.get('recieved_lots', 0)
+
+        if requested and requested > trade.lots:
+            raise serializers.ValidationError("Requested exit lots cannot exceed total trade lots.")
+
+        if received and received > requested:
+            raise serializers.ValidationError("Received lots cannot exceed requested lots.")
+
+        return data

@@ -7,9 +7,9 @@ from rest_framework.pagination import PageNumberPagination
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 
-from .models import Trade, Availability, Profit
+from .models import Trade, Availability, Profit, Exit
 from django.db.models import Q
-from .serializers import TradeSerializer, ProfitSerializer
+from .serializers import TradeSerializer, ProfitSerializer, ExitSerializer
 from django.shortcuts import get_object_or_404
 
 class CreateTradeView(generics.CreateAPIView):
@@ -263,3 +263,82 @@ def update_profit(request, pk):
     serializer.save()
 
     return Response(serializer.data)
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def create_exit(request):
+    try:
+        trade = Trade.objects.get(id=request.data.get("trade"))
+    except Trade.DoesNotExist:
+        return Response({"error": "Trade not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    if trade.trader != request.user:
+        return Response({"error": "Not allowed to exit this trade."}, status=status.HTTP_403_FORBIDDEN)
+
+    serializer = ExitSerializer(data=request.data)
+    if serializer.is_valid():
+        exit_obj = serializer.save()
+        
+        # Notify via WebSocket
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(
+            f'trade_{trade.id}',  # or just 'trades' group if global
+            {
+                'type': 'exit_created',
+                'exit': ExitSerializer(exit_obj).data
+            }
+        )
+
+        return Response(ExitSerializer(exit_obj).data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def my_exit_requests(request):
+    exits = Exit.objects.filter(user=request.user).order_by('-created_at')
+    serializer = ExitSerializer(exits, many=True)
+    return Response(serializer.data)
+
+@api_view(['PATCH'])
+@permission_classes([permissions.IsAuthenticated])
+def update_exit_status(request, exit_id):
+    try:
+        exit_obj = Exit.objects.get(id=exit_id)
+    except Exit.DoesNotExist:
+        return Response({"error": "Exit not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    new_status = request.data.get("status")
+    valid_statuses = ['approved', 'rejected', 'executed']
+
+    if new_status not in valid_statuses:
+        return Response({"error": "Invalid status."}, status=status.HTTP_400_BAD_REQUEST)
+
+    if new_status == 'approved':
+        exit_obj.status = 'approved'
+        exit_obj.approved_by = request.user
+        exit_obj.approved_at = now()
+
+    elif new_status == 'rejected':
+        exit_obj.status = 'rejected'
+        exit_obj.rejected_by = request.user
+        exit_obj.rejected_at = now()
+        exit_obj.rejected_reason = request.data.get("rejected_reason", "")
+
+    elif new_status == 'executed':
+        exit_obj.status = 'executed'
+        exit_obj.executed_at = now()
+        exit_obj.executed_price = request.data.get("executed_price")
+
+    exit_obj.save()
+
+    # WebSocket notify
+    channel_layer = get_channel_layer()
+    async_to_sync(channel_layer.group_send)(
+        f'trade_{exit_obj.trade.id}',  # or 'trades' if global
+        {
+            'type': 'exit_update',
+            'exit': ExitSerializer(exit_obj).data
+        }
+    )
+
+    return Response(ExitSerializer(exit_obj).data)
