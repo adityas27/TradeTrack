@@ -11,9 +11,13 @@ import Signup from "./components/Signup";
 import NotFound from "./components/404";
 import CloseRequests from "./components/CloseRequests";
 import ClosedTrades from "./components/ClosedTrades";
-import SettlementModal from "./components/SettlementModal";
-import TradeListAndSettlement from "./components/TradeListAndSettlement";
 import TradesTable from "./components/TradeTable";
+
+// New components
+import CreateExitForm from "./components/CreateExitForm";
+import ManagerExit from "./components/ManagerExit";
+import MyExitList from "./components/MyExitList";
+
 function App() {
   return (
     <Router>
@@ -29,8 +33,12 @@ function App() {
           <Route path="/close_req" element={<CloseRequests />} />
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
-          <Route path="/settlement_price" element={<SettlementModal />} />
           <Route path="/settlement" element={<TradesTable />} />
+
+          {/* New routes */}
+          <Route path="/create-exit" element={<CreateExitForm />} />
+          <Route path="/manager-exit" element={<ManagerExit />} />
+          <Route path="/my-exits" element={<MyExitList />} />
 
           <Route path="*" element={<NotFound />} />
         </Routes>

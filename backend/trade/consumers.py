@@ -18,3 +18,9 @@ class TradeConsumer(AsyncWebsocketConsumer):
             'type': event['type'], # This will be 'trade_update'
             'trade': event['trade'] # This is the serialized trade object
         }))
+        
+    async def exit_update(self, event):
+        await self.send(text_data=json.dumps({
+            'type': 'exit_update',
+            'exit': event['exit']
+        }))

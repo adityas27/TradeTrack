@@ -77,7 +77,7 @@ class ExitSerializer(serializers.ModelSerializer):
         model = Exit
         fields = [
             'id', 'trade', 'requested_exit_lots', 'recieved_lots',
-            'exit_price', 'profit_loss', 'exit_status', 'created_at'
+            'exit_price', 'profit_loss', 'exit_status', 'requested_at', 'is_closed'
         ]
         read_only_fields = ['profit_loss', 'exit_status']
 
