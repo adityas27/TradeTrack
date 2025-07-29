@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import AddLotsModal from "./AddLots"; // Adjust the import path as necessary
 
 const MyTrades = () => {
   const [trades, setTrades] = useState([]);
@@ -6,6 +7,8 @@ const MyTrades = () => {
   const [exitTrade, setExitTrade] = useState(null);
   const [exitLots, setExitLots] = useState("");
   const [exitPrice, setExitPrice] = useState("");
+  const [showAddLotsModal, setShowAddLotsModal] = useState(false);
+  const [addLotsTrade, setAddLotsTrade] = useState(null);
 
   useEffect(() => {
     fetch("http://127.0.0.1:8000/api/trades/trades/my/", {
@@ -55,6 +58,21 @@ const MyTrades = () => {
     }
   };
 
+  const openAddLotsModal = (trade) => {
+    setAddLotsTrade(trade);
+    setShowAddLotsModal(true);
+  };
+
+  const closeAddLotsModal = () => {
+    setShowAddLotsModal(false);
+    setAddLotsTrade(null);
+  };
+
+  const refreshTrades = () => {
+    // re-fetch trades logic here, or reload page
+    window.location.reload();
+  };
+
   const formatDate = (dateString) => {
     return dateString ? new Date(dateString).toLocaleString() : "N/A";
   };
@@ -96,6 +114,12 @@ const MyTrades = () => {
                       onClick={() => openExitModal(trade)}
                     >
                       Add Exit
+                    </button>
+                    <button
+                      className="px-3 py-1 text-xs bg-green-500 text-white rounded hover:bg-green-600 mr-2"
+                      onClick={() => openAddLotsModal(trade)}
+                    >
+                      Add Lots
                     </button>
                   </td>
                 </tr>
@@ -149,6 +173,14 @@ const MyTrades = () => {
           </div>
         </div>
       )}
+
+      {/* Add Lots Modal */}
+      <AddLotsModal
+        trade={addLotsTrade}
+        show={showAddLotsModal}
+        onClose={closeAddLotsModal}
+        // onSuccess={refreshTrades}
+      />
     </div>
   );
 };

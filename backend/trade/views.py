@@ -6,6 +6,7 @@ from django.utils.timezone import now
 from rest_framework.pagination import PageNumberPagination
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
+from decimal import Decimal
 
 from .models import Trade, Availability, Profit, Exit
 from django.db.models import Q
@@ -24,8 +25,10 @@ class CreateTradeView(generics.CreateAPIView):
             self.notify_ws_clients(trade)
             return Response(TradeSerializer(trade).data, status=status.HTTP_201_CREATED)
         else:
-            print("❌ Serializer errors:", serializer.errors)
+            print("Serializer errors:", serializer.errors)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+
 
     def notify_ws_clients(self, trade):
         channel_layer = get_channel_layer()
@@ -278,7 +281,7 @@ def create_exit(request):
     serializer = ExitSerializer(data=request.data)
 
     if serializer.is_valid():
-        exit_obj = serializer.save(exit_initiated_by=request.user)  # ✅ pass user directly
+        exit_obj = serializer.save(exit_initiated_by=request.user)
 
         # Notify via WebSocket
         channel_layer = get_channel_layer()
@@ -344,3 +347,53 @@ def update_exit_status(request, exit_id):
     )
 
     return Response(ExitSerializer(exit_obj).data)
+
+@api_view(['PATCH'])
+@permission_classes([permissions.IsAuthenticated])
+def add_lots_to_trade(request, trade_id):
+    """
+    Trader can add new lots at any price.
+    The new lots are added to the existing lots and price is averaged.
+    Formula: ((new_lots * new_price) + (old_lots * old_price)) / total_lots
+    """
+    try:
+        trade = Trade.objects.get(id=trade_id, trader=request.user)
+    except Trade.DoesNotExist:
+        return Response({"error": "Trade not found or not allowed."}, status=status.HTTP_404_NOT_FOUND)
+
+    new_lots = request.data.get("new_lots")
+    new_price = request.data.get("new_price")
+
+    if not new_lots or not new_price:
+        return Response({"error": "new_lots and new_price are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        new_lots = int(new_lots)
+        new_price = Decimal(str(new_price))
+    except Exception:
+        return Response({"error": "Invalid lots or price."}, status=status.HTTP_400_BAD_REQUEST)
+
+    if new_lots <= 0:
+        return Response({"error": "new_lots must be positive."}, status=status.HTTP_400_BAD_REQUEST)
+
+    old_lots = trade.lots
+    old_price = trade.price
+
+    total_lots = old_lots + new_lots
+    avg_price = ((new_lots * new_price) + (old_lots * old_price)) / total_lots
+
+    trade.lots = total_lots
+    trade.price = avg_price
+    trade.save()
+
+    # Optionally notify via WebSocket
+    channel_layer = get_channel_layer()
+    async_to_sync(channel_layer.group_send)(
+        'trades',
+        {
+            'type': 'trade_update',
+            'trade': TradeSerializer(trade).data,
+        }
+    )
+
+    return Response(TradeSerializer(trade).data, status=status.HTTP_200_OK)
