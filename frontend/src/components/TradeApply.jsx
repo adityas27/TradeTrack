@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
+import api from '../api/api';
 
 const CreateTrade = () => {
   const [form, setForm] = useState({
-    display_name: '',
     name: '',
     trade_type: 'long',
     lots: '',
@@ -36,9 +36,8 @@ const CreateTrade = () => {
 
     setSearching(true);
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/trades/availabilities/?search=${value}`);
-      const data = await res.json();
-      setAvailabilities(data);
+      const res = await api.get(`trades/availabilities/?search=${value}`);
+      setAvailabilities(res.data);
     } catch (err) {
       console.error("Availability search failed", err);
     } finally {
@@ -53,16 +52,9 @@ const CreateTrade = () => {
     setLoading(true);
 
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/trades/apply/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('access')}`,
-        },
-        body: JSON.stringify(form),
-      });
+      const res = await api.post('trades/apply/', form);
 
-      if (res.ok) {
+      if (res.status === 201) {
         setMessage('Trade created successfully!');
         setMessageType('success');
         setForm({
@@ -74,15 +66,13 @@ const CreateTrade = () => {
         });
         setSearch('');
         setAvailabilities([]);
-      } else {
-        const errorData = await res.json();
-        const errorMessage = errorData.detail || 'Failed to create trade. Please try again.';
-        setMessage(errorMessage);
-        setMessageType('error');
       }
     } catch (error) {
       console.error("Submission error:", error);
-      setMessage('An unexpected error occurred. Please check your network connection.');
+      const errorMessage = error.response?.data?.detail || 
+                          error.response?.data?.message || 
+                          'Failed to create trade. Please try again.';
+      setMessage(errorMessage);
       setMessageType('error');
     } finally {
       setLoading(false);
@@ -116,7 +106,7 @@ const CreateTrade = () => {
         <input
           id="search"
           type="text"
-          placeholder="e.g. ZS Apr, Gold May, CL"
+          placeholder="e.g. GOLD, SILVER, CL"
           value={search}
           onChange={handleAvailabilitySearch}
           className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition"
@@ -136,32 +126,33 @@ const CreateTrade = () => {
                 onClick={() => {
                   setForm((prev) => ({
                     ...prev,
-                    name: `${item.id}`,
-                    display_name: `${item.commodity_code} - ${item.contract_label}`,
+                    name: item.id,
                   }));
-                  setSearch('');
+                  setSearch(`${item.commodity_code} - ${item.start_month} to ${item.end_month}`);
                   setAvailabilities([]);
                 }}
                 className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm text-gray-800"
               >
-                📦 <strong>{item.commodity_code}</strong> — <span className="text-gray-600">{item.contract_label}</span>
+                📦 <strong>{item.commodity_code}</strong> — <span className="text-gray-600">
+                  {item.start_month} to {item.end_month}
+                </span>
               </div>
             ))}
           </div>
         )}
       </div>
 
+      {/* Selected Availability Display */}
+      {form.name && (
+        <div className="bg-blue-50 p-3 rounded-lg">
+          <p className="text-sm text-blue-800">
+            <strong>Selected:</strong> {search}
+          </p>
+        </div>
+      )}
+
       {/* Main Form Inputs */}
       <div className="space-y-4">
-        <input
-          name="name"
-          placeholder="Trade Name"
-          value={form.display_name}
-          onChange={handleChange}
-          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-700 placeholder-gray-500"
-          required
-        />
-
         <select
           name="trade_type"
           value={form.trade_type}
@@ -198,19 +189,18 @@ const CreateTrade = () => {
           name="stop_loss"
           type="number"
           step="0.01"
-          placeholder="Stop Loss"
+          placeholder="Stop Loss (Optional)"
           value={form.stop_loss}
           onChange={handleChange}
           className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-700 placeholder-gray-500"
-          required
         />
       </div>
 
       <button
         type="submit"
-        disabled={loading}
+        disabled={loading || !form.name}
         className={`w-full text-white font-semibold py-3 rounded-lg shadow-md transition duration-200 ${
-          loading
+          loading || !form.name
             ? 'bg-blue-300 cursor-not-allowed'
             : 'bg-blue-600 hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2'
         }`}

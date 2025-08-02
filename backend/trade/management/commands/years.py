@@ -1,49 +1,95 @@
+# your_app_name/management/commands/load_settlements.py
+
+import os
+import pandas as pd
 from django.core.management.base import BaseCommand
-from trade.models import ContractMonth
-from calendar import month_abbr
-import datetime
+from django.db import transaction
+
+# --- IMPORTANT ---
+# Replace 'your_app_name' with the actual name of your Django app
+from trade.models import Commodity, Settlement
 
 class Command(BaseCommand):
-    help = 'Populates ContractMonth and Commodity tables'
+    """
+    A Django management command to load settlement data using pandas.
 
-    def handle(self, *args, **kwargs):
-        self.populate_contract_months()
+    This script reads 'data.csv', finds all 'TRUE' values, and creates
+    Settlement instances for each year between 2025 and 2030.
+    """
+    help = 'Loads settlement data from data.csv for years 2025-2030 using pandas'
 
-    def populate_contract_months(self):
-        MONTHS = list(month_abbr)[1:]  # ['Jan', 'Feb', ..., 'Dec']
-        YEARS = [2025]
-        print(MONTHS)
-        created_count = 0
-        print(f"Poupulation contract months entries from years {YEARS[0]} to {YEARS[-1]}...")
+    def handle(self, *args, **options):
+        """
+        The main logic for the management command.
+        """
+        # --- Configuration ---
+        start_year = 2025
+        end_year = 2030
+        csv_file_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), 'trade\management\commands\data.csv')
 
-        for i in range(len(YEARS)):
-            print(f"Processing year: {YEARS[i]}")
-            year = YEARS[i]
-            for m in range(12):
-                print(f"Processing month: {MONTHS[m]} {year}")
-                start_month = MONTHS[m]
-                start_year = year
-                if m == 11:
-                    end_month = MONTHS[0]  # Jan
-                    end_year = YEARS[i + 1] if i + 1 < len(YEARS) else year + 1
-                else:
-                    end_month = MONTHS[m + 1]
-                    end_year = year
+        if not os.path.exists(csv_file_path):
+            self.stdout.write(self.style.ERROR(f"Error: 'data.csv' not found at '{csv_file_path}'"))
+            return
 
-                label = f"{start_month[-3:]}{str(start_year)[-2:]}-{end_month[-3:]}{str(end_year)[-2:]}"
-                print(label)
-                _, created = ContractMonth.objects.get_or_create(
-                    label=label,
-                    defaults={
-                        'start_month': start_month,
-                        'start_year': start_year,
-                        'end_month': end_month,
-                        'end_year': end_year,
-                    }
-                )
-                print(f"Created: {created}")
-                if created:
-                    created_count += 1
-                    self.stdout.write(f"Created ContractMonth: {label}")
+        self.stdout.write(self.style.SUCCESS(f"Starting settlement import from '{csv_file_path}' using pandas..."))
 
-        self.stdout.write(self.style.SUCCESS(f"✅ Created {created_count} ContractMonth entries"))
+        try:
+            # 1. Read the CSV into a pandas DataFrame first with default types.
+            # We set the first column ('PRODUCT') as the index of the DataFrame.
+            df = pd.read_csv(csv_file_path, index_col=0)
+
+            # Then, convert all data columns to boolean type. This avoids the dtype error.
+            df = df.astype(bool)
+
+            # 2. Reshape the data for easy iteration
+            # stack() converts the wide DataFrame to a long Series with a (month, commodity) index
+            stacked_data = df.stack()
+            
+            # 3. Filter for only the TRUE values
+            true_settlements = stacked_data[stacked_data]
+
+            if true_settlements.empty:
+                self.stdout.write(self.style.WARNING("No 'TRUE' values found in the CSV. No settlements will be created."))
+                return
+
+            with transaction.atomic():
+                self.stdout.write("Clearing existing Settlement data...")
+                Settlement.objects.all().delete()
+                self.stdout.write("Existing data cleared.")
+                
+                created_count = 0
+                
+                # 4. Iterate over the years and the filtered data
+                for year in range(start_year, end_year + 1):
+                    # The index of our series contains the (month_info, commodity_code) tuples
+                    for (month_info, commodity_code), _ in true_settlements.items():
+                        try:
+                            # Extract the 3-letter month abbreviation (e.g., "Jan")
+                            month_abbr = month_info.split()[1]
+                        except IndexError:
+                            self.stdout.write(self.style.WARNING(f"Skipping invalid month format: '{month_info}'"))
+                            continue
+
+                        # Get or create the Commodity object to avoid integrity errors
+                        commodity, created = Commodity.objects.get_or_create(
+                            code=commodity_code,
+                            defaults={'name': commodity_code}  # Use code as name if creating
+                        )
+                        if created:
+                            self.stdout.write(self.style.NOTICE(f"Created new commodity: {commodity_code}"))
+
+                        # Create the Settlement instance
+                        Settlement.objects.create(
+                            commodity=commodity,
+                            settlement_price=0.00,  # Placeholder price
+                            month=month_abbr,
+                            year=year
+                        )
+                        created_count += 1
+            
+            self.stdout.write(self.style.SUCCESS(f"Successfully created {created_count} settlement instances."))
+
+        except FileNotFoundError:
+            self.stdout.write(self.style.ERROR(f"Error: The file '{csv_file_path}' was not found."))
+        except Exception as e:
+            self.stdout.write(self.style.ERROR(f"An unexpected error occurred: {e}"))

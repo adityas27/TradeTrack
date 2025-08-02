@@ -19,6 +19,9 @@ class Settlement(models.Model):
     month = models.CharField(max_length=20)  # E.g. "Jan25"
     year = models.IntegerField()  # E.g. 2025
 
+    def __str__(self):
+        return f"{self.commodity.code} - {self.month}{self.year} @ {self.settlement_price}"
+
 class Availability(models.Model):
     commodity = models.ForeignKey(Commodity, on_delete=models.CASCADE)
     start_month = models.ForeignKey(Settlement, on_delete=models.CASCADE, related_name="start", default=None, null=True)

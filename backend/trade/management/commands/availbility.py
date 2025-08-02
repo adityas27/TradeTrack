@@ -1,79 +1,111 @@
+# your_app_name/management/commands/load_settlements.py
+
+import os
 import pandas as pd
+import itertools
+from datetime import datetime
 from django.core.management.base import BaseCommand
-from trade.models import Commodity, ContractMonth, Availability
+from django.db import transaction
+
+# --- IMPORTANT ---
+# Replace 'your_app_name' with the actual name of your Django app
+from trade.models import Commodity, Settlement, Availability
 
 class Command(BaseCommand):
-    help = "Populate Availability table from a CSV file using Pandas"
+    """
+    A Django management command to load settlement data using pandas.
 
-    def add_arguments(self, parser):
-        parser.add_argument("csv_file", type=str, help="Path to CSV file")
-        parser.add_argument("--year", type=int, default=2025, help="Start year to use for contract months")
+    This script reads 'data.csv', finds all 'TRUE' values, creates
+    Settlement instances, and then creates all month-to-month combinations
+    as Availability instances.
+    """
+    help = 'Loads settlements and creates all month-to-month availability combinations'
 
-    def handle(self, *args, **kwargs):
-        csv_file = kwargs["csv_file"]
-        base_year = kwargs["year"]
+    def handle(self, *args, **options):
+        """
+        The main logic for the management command.
+        """
+        # --- Configuration ---
+        start_year = 2025
+        end_year = 2030
+        csv_file_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), 'trade\management\commands\data.csv')
 
-        # Symbol to month abbreviation mapping
-        month_map = {
-            "F": "Jan", "G": "Feb", "H": "Mar", "J": "Apr", "K": "May", "M": "Jun",
-            "N": "Jul", "Q": "Aug", "U": "Sep", "V": "Oct", "X": "Nov", "Z": "Dec"
-        }
+        if not os.path.exists(csv_file_path):
+            self.stdout.write(self.style.ERROR(f"Error: 'data.csv' not found at '{csv_file_path}'"))
+            return
+
+        self.stdout.write(self.style.SUCCESS(f"--- Step 1: Importing Settlements from '{csv_file_path}' ---"))
 
         try:
-            df = pd.read_csv(csv_file)
-        except Exception as e:
-            self.stderr.write(self.style.ERROR(f"❌ Failed to read CSV: {e}"))
-            return
+            # 1. Read the CSV into a pandas DataFrame first with default types.
+            df = pd.read_csv(csv_file_path, index_col=0)
+            df = df.astype(bool)
 
-        # Check that 'PRODUCT' or first column exists
-        if df.columns[0].strip().lower() not in ['product', 'contract', 'month']:
-            self.stderr.write(self.style.ERROR("❌ First column must be 'PRODUCT' or similar."))
-            return
+            # 2. Reshape and filter for TRUE values
+            stacked_data = df.stack()
+            true_settlements = stacked_data[stacked_data]
 
-        df = df.rename(columns={df.columns[0]: 'MonthKey'})
+            if true_settlements.empty:
+                self.stdout.write(self.style.WARNING("No 'TRUE' values found in the CSV. No settlements will be created."))
+                return
 
-        for _, row in df.iterrows():
-            if pd.isna(row['MonthKey']):
-                continue
+            with transaction.atomic():
+                self.stdout.write("Clearing existing Settlement and Availability data...")
+                Settlement.objects.all().delete()
+                Availability.objects.all().delete()
+                self.stdout.write("Existing data cleared.")
+                
+                created_count = 0
+                for year in range(start_year, end_year + 1):
+                    for (month_info, commodity_code), _ in true_settlements.items():
+                        month_abbr = month_info.split()[1]
+                        commodity, _ = Commodity.objects.get_or_create(code=commodity_code, defaults={'name': commodity_code})
+                        Settlement.objects.create(commodity=commodity, settlement_price=0.00, month=month_abbr, year=year)
+                        created_count += 1
+            
+            self.stdout.write(self.style.SUCCESS(f"Successfully created {created_count} settlement instances."))
 
-            try:
-                # Split 'F Jan' → symbol = 'F'
-                symbol = row['MonthKey'].split()[0].strip('.')
-                start_month = month_map.get(symbol)
-                if not start_month:
-                    self.stderr.write(f"⚠️ Unknown symbol: {row['MonthKey']}")
-                    continue
+            # --- Step 2: Generate Availability Combinations ---
+            self.stdout.write(self.style.SUCCESS("\n--- Step 2: Generating availability combinations ---"))
+            
+            with transaction.atomic():
+                combination_count = 0
+                commodities = Commodity.objects.filter(settlements__isnull=False).distinct()
+                
+                # Helper to sort months correctly since Django's order_by on a CharField is alphabetical
+                month_map = {datetime.strptime(str(i), '%m').strftime('%b'): i for i in range(1, 13)}
 
-                # Derive end month/year
-                start_year = base_year
-                month_values = list(month_map.values())
-                end_idx = (month_values.index(start_month) + 1) % 12
-                end_month = month_values[end_idx]
-                end_year = start_year + 1 if end_month == "Jan" else start_year
+                for commodity in commodities:
+                    # Loop through each year range (25-26, 26-27, etc.)
+                    for year in range(start_year, end_year):
+                        next_year = year + 1
 
-                label = f"{start_month}{str(start_year)[-2:]}-{end_month}{str(end_year)[-2:]}"
-                contract = ContractMonth.objects.get(label=label)
-
-                for code in row.index[1:]:  # skip MonthKey
-                    value = str(row[code]).strip().lower()
-                    if value not in ['true', 'false']:
-                        continue  # skip blanks, errors
-
-                    try:
-                        commodity = Commodity.objects.get(code=code.strip())
-                        is_available = value == 'true'
-
-                        _, created = Availability.objects.update_or_create(
-                            contract_month=contract,
+                        # Get all settlements for the current commodity in the 2-year window
+                        settlements_in_window_qs = Settlement.objects.filter(
                             commodity=commodity,
-                            defaults={"is_available": is_available}
+                            year__in=[year, next_year]
                         )
-                        if created:
-                            self.stdout.write(f"✅ {label} - {code}: {is_available}")
-                    except Commodity.DoesNotExist:
-                        self.stderr.write(f"❌ Commodity not found: {code}")
+                        
+                        # Sort the queryset in Python to handle month names correctly
+                        settlements_in_window = sorted(
+                            list(settlements_in_window_qs),
+                            key=lambda s: (s.year, month_map.get(s.month, 0))
+                        )
 
-            except Exception as e:
-                self.stderr.write(f"Error on row {row['MonthKey']}: {e}")
+                        # Generate all unique pairs of Settlement objects
+                        for start_settlement, end_settlement in itertools.combinations(settlements_in_window, 2):
+                            Availability.objects.create(
+                                commodity=commodity,
+                                start_month=start_settlement,
+                                end_month=end_settlement,
+                                settlement_price=0.0,
+                                is_available=True
+                            )
+                            combination_count += 1
+                
+                self.stdout.write(self.style.SUCCESS(f"Successfully created {combination_count} availability instances."))
 
-        self.stdout.write(self.style.SUCCESS("✅ Availability imported from CSV successfully."))
+        except FileNotFoundError:
+            self.stdout.write(self.style.ERROR(f"Error: The file '{csv_file_path}' was not found."))
+        except Exception as e:
+            self.stdout.write(self.style.ERROR(f"An unexpected error occurred: {e}"))

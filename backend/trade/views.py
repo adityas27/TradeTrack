@@ -114,8 +114,8 @@ def update_fills_received(request, trade_id):
     except Trade.DoesNotExist:
         return Response({"error": "Trade not found."}, status=status.HTTP_404_NOT_FOUND)
 
-    fills_received_for = int(request.data.get("fills_received_for", 0))
-    fills_received_of = request.data.get("fills_received_of", trade.fills_received_of)
+    fills_received_for = int(request.data.get("fills_received_for"))
+    fills_received_of = request.data.get("fills_received_of")
 
     if trade.fills_recivied_for + fills_received_for > trade.lots:
         return Response({"error": "Cannot exceed total lots."}, status=status.HTTP_400_BAD_REQUEST)

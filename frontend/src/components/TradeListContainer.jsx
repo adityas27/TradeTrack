@@ -2,9 +2,10 @@ import React, { useEffect, useState, useCallback } from 'react';
 import QuarterFilter from './QuarterFilter';
 import NetProfitLossSummary from './NetProfitLossSummary';
 import TradeTable from './TradeTable';
-import SettlementModal from './SettlementModal'; // Assuming this is your modal component
+import SettlementModal from './SettlementModal';
+import api from '../api/api';
 
-const API_PAGE_SIZE = 10; // Must match your Django DRF pagination setting
+const API_PAGE_SIZE = 10;
 
 const TradeListContainer = () => {
     const [trades, setTrades] = useState([]);
@@ -15,7 +16,7 @@ const TradeListContainer = () => {
     const [netProfitLoss, setNetProfitLoss] = useState(0);
 
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [selectedProfitForModal, setSelectedProfitForModal] = useState(null);
+    const [selectedTradeForModal, setSelectedTradeForModal] = useState(null);
 
     const [selectedQuarter, setSelectedQuarter] = useState(() => {
         const currentMonth = new Date().getMonth();
@@ -50,7 +51,6 @@ const TradeListContainer = () => {
         };
     }, []);
 
-
     const fetchTrades = useCallback(async () => {
         setLoading(true);
         setError(null);
@@ -58,27 +58,17 @@ const TradeListContainer = () => {
         const { startDate, endDate } = getQuarterDates(selectedQuarter);
 
         try {
-            // Include quarter dates in API call
-            const url = `http://127.0.0.1:8000/api/trades/manager/?page=${page}&page_size=${API_PAGE_SIZE}&start_date=${startDate}&end_date=${endDate}`;
-            const res = await fetch(url, {
-                headers: {
-                    Authorization: "Bearer " + localStorage.getItem("access"),
-                },
-            });
-
-            if (!res.ok) {
-                throw new Error(`HTTP error! status: ${res.status}`);
-            }
-
-            const data = await res.json();
-            setTrades(data.results || []);
-            setTotalPages(Math.ceil(data.count / API_PAGE_SIZE));
+            const res = await api.get(`trades/manager/?page=${page}&page_size=${API_PAGE_SIZE}&start_date=${startDate}&end_date=${endDate}`);
+            
+            setTrades(res.data.results || []);
+            setTotalPages(Math.ceil(res.data.count / API_PAGE_SIZE));
 
             // Calculate net profit/loss for the loaded trades
-            const calculatedNetProfitLoss = data.results.reduce((sum, trade) => {
-                // Assuming 'latest_profit_record' is available and has 'profit'
-                // Or adapt based on how your Trade serializer includes profit data
-                return sum + (trade.latest_profit_record?.profit || 0);
+            const calculatedNetProfitLoss = res.data.results.reduce((sum, trade) => {
+                // Calculate profit/loss based on trade data
+                // This is a simplified calculation - adjust based on your business logic
+                const profit = trade.profit_loss || 0;
+                return sum + profit;
             }, 0);
             setNetProfitLoss(calculatedNetProfitLoss);
 
@@ -91,15 +81,15 @@ const TradeListContainer = () => {
         } finally {
             setLoading(false);
         }
-    }, [page, selectedQuarter, getQuarterDates]); // Re-fetch on page or quarter change
+    }, [page, selectedQuarter, getQuarterDates]);
 
     useEffect(() => {
         fetchTrades();
     }, [fetchTrades]);
 
-    // WebSocket for real-time updates (updated from previous session)
+    // WebSocket for real-time updates
     useEffect(() => {
-        const socket = new WebSocket("ws://127.0.0.1:8000/ws/trades/"); // Assuming 'trades' group sends all relevant updates
+        const socket = new WebSocket("ws://127.0.0.1:8000/ws/trades/");
 
         socket.onmessage = (event) => {
             const data = JSON.parse(event.data);
@@ -114,31 +104,9 @@ const TradeListContainer = () => {
                         return newTrades;
                     } else {
                         // If a new trade arrives or an off-page trade is updated, re-fetch the current page
-                        // to ensure accurate pagination and filtering.
                         fetchTrades(); 
                         return prevTrades; 
                     }
-                });
-            } else if (data.type === "profit_update" && data.profit_data) { // Handle profit updates
-                const updatedProfit = data.profit_data;
-                setTrades((prevTrades) => {
-                    const newTrades = prevTrades.map(trade => {
-                        // Find the trade this profit record belongs to
-                        if (trade.id === updatedProfit.trade) { // Assuming profit_data has 'trade' ID
-                            // Update the nested profit record (assuming 'latest_profit_record' on Trade)
-                            return { 
-                                ...trade, 
-                                latest_profit_record: { ...trade.latest_profit_record, ...updatedProfit } 
-                            };
-                        }
-                        return trade;
-                    });
-                    // After updating, manually recalculate net profit loss from the new state
-                    const calculatedNetProfitLoss = newTrades.reduce((sum, trade) => {
-                         return sum + (trade.latest_profit_record?.profit || 0);
-                    }, 0);
-                    setNetProfitLoss(calculatedNetProfitLoss);
-                    return newTrades;
                 });
             }
         };
@@ -148,7 +116,7 @@ const TradeListContainer = () => {
         socket.onerror = (err) => console.error("WebSocket error:", err);
 
         return () => socket.close();
-    }, [fetchTrades]); // Dependency on fetchTrades for re-fetching logic
+    }, [fetchTrades]);
 
     // Pagination handlers
     const handleNextPage = () => setPage((prev) => Math.min(prev + 1, totalPages));
@@ -160,23 +128,33 @@ const TradeListContainer = () => {
         setPage(1); // Reset to first page on quarter change
     };
 
-    const handleSettleClick = (profitObject) => { // Expecting the Profit object
-        setSelectedProfitForModal(profitObject);
+    const handleSettleClick = (trade) => {
+        setSelectedTradeForModal(trade);
         setIsModalOpen(true);
     };
 
     const handleModalClose = () => {
         setIsModalOpen(false);
-        setSelectedProfitForModal(null);
+        setSelectedTradeForModal(null);
     };
 
     const handleModalSuccess = () => {
-        // After successful settlement, re-fetch the current page to ensure updated data and profit calculations
         fetchTrades(); 
-        handleModalClose(); // Close modal immediately after success callback
+        handleModalClose();
     };
 
     const totalPagesNumbers = Array.from({ length: totalPages }, (_, i) => i + 1);
+
+    if (loading) {
+        return (
+            <div className="p-6 max-w-7xl mx-auto">
+                <div className="text-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+                    <p className="mt-4 text-gray-600">Loading trades...</p>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="p-6 max-w-7xl mx-auto space-y-6">
@@ -193,14 +171,11 @@ const TradeListContainer = () => {
                 <NetProfitLossSummary netProfitLoss={netProfitLoss} quarterDisplay={selectedQuarter} />
             </div>
 
-            {loading ? (
-                <p className="text-gray-600 text-lg text-center py-8 bg-gray-50 rounded-lg shadow-sm border border-gray-200">
-                    Loading trades...
-                </p>
-            ) : trades.length === 0 ? (
-                <p className="text-gray-600 text-lg text-center py-8 bg-gray-50 rounded-lg shadow-sm border border-gray-200">
-                    No trades found for this quarter.
-                </p>
+            {trades.length === 0 ? (
+                <div className="text-center py-8 bg-gray-50 rounded-lg shadow-sm border border-gray-200">
+                    <p className="text-gray-600 text-lg">No trades found for this quarter.</p>
+                    <p className="text-gray-500 text-sm mt-2">Trades will appear here once created.</p>
+                </div>
             ) : (
                 <>
                     <TradeTable 
@@ -211,40 +186,42 @@ const TradeListContainer = () => {
                     />
 
                     {/* Pagination Controls */}
-                    <div className="flex justify-center items-center mt-6 space-x-4 p-4 bg-white rounded-lg shadow-md border border-gray-200">
-                        <button
-                            onClick={handlePreviousPage}
-                            disabled={page === 1 || loading}
-                            className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
-                        >
-                            Previous
-                        </button>
-                        {totalPagesNumbers.map((number) => (
+                    {totalPages > 1 && (
+                        <div className="flex justify-center items-center mt-6 space-x-4 p-4 bg-white rounded-lg shadow-md border border-gray-200">
                             <button
-                                key={number}
-                                onClick={() => handlePageChange(number)}
-                                className={`px-3 py-1 rounded-md text-sm font-medium
-                                ${currentPage === number ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-700 hover:bg-gray-300"}
-                                disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200`}
-                                disabled={loading}
+                                onClick={handlePreviousPage}
+                                disabled={page === 1 || loading}
+                                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
                             >
-                                {number}
+                                Previous
                             </button>
-                        ))}
-                        <button
-                            onClick={handleNextPage}
-                            disabled={page === totalPages || loading}
-                            className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
-                        >
-                            Next
-                        </button>
-                    </div>
+                            {totalPagesNumbers.map((number) => (
+                                <button
+                                    key={number}
+                                    onClick={() => handlePageChange(number)}
+                                    className={`px-3 py-1 rounded-md text-sm font-medium
+                                    ${page === number ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-700 hover:bg-gray-300"}
+                                    disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200`}
+                                    disabled={loading}
+                                >
+                                    {number}
+                                </button>
+                            ))}
+                            <button
+                                onClick={handleNextPage}
+                                disabled={page === totalPages || loading}
+                                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+                            >
+                                Next
+                            </button>
+                        </div>
+                    )}
                 </>
             )}
 
-            {isModalOpen && selectedProfitForModal && (
+            {isModalOpen && selectedTradeForModal && (
                 <SettlementModal
-                    profit={selectedProfitForModal}
+                    trade={selectedTradeForModal}
                     onClose={handleModalClose}
                     onSuccess={handleModalSuccess}
                 />
@@ -255,17 +232,18 @@ const TradeListContainer = () => {
 
 export default TradeListContainer;
 
-// Helper functions (could be moved to a utils file)
+// Helper functions
 const formatDate = (dateString) => {
     return dateString ? new Date(dateString).toLocaleString() : "N/A";
 };
 
 const getStatusBadgeClass = (status) => {
-    switch (status) {
-        case "pending": return "bg-yellow-100 text-yellow-800";
-        case "approved": return "bg-blue-100 text-blue-800";
-        case "order_placed": return "bg-purple-100 text-purple-800";
-        case "fills_received": return "bg-green-100 text-green-800";
-        default: return "bg-gray-100 text-gray-800";
-    }
+    const statusClasses = {
+        pending: 'bg-yellow-100 text-yellow-800',
+        approved: 'bg-green-100 text-green-800',
+        order_placed: 'bg-blue-100 text-blue-800',
+        fills_received: 'bg-purple-100 text-purple-800',
+        partial_fills_received: 'bg-orange-100 text-orange-800',
+    };
+    return statusClasses[status] || 'bg-gray-100 text-gray-800';
 };
