@@ -13,20 +13,6 @@ class Commodity(models.Model):
     def __str__(self):
         return self.code
 
-class ContractMonth(models.Model):
-    """
-    Model to store month pairs, a script will be triggered to create these one month prior to start of new year.  
-    Eg. if Jan25-Feb25 to Dec25-Jan26 exists, then the script will create Jan26-Feb26 to Dec26-Jan27 in December 2025
-    """
-    label = models.CharField(max_length=20, unique=True)  # E.g. "Jan25-Feb25"
-    start_month = models.CharField(max_length=3)          # "Jan"
-    end_month = models.CharField(max_length=3)            # "Feb"
-    start_year = models.IntegerField()                    # 2025
-    end_year = models.IntegerField()                      # 2025 or 2026
-
-    def __str__(self):
-        return self.label
-
 class Settlement(models.Model):
     commodity = models.ForeignKey(Commodity, on_delete=models.CASCADE, related_name='settlements')
     settlement_price = models.DecimalField(max_digits=10, decimal_places=2)
@@ -41,13 +27,9 @@ class Availability(models.Model):
     is_available = models.BooleanField()
 
     def __str__(self):
-        return f"{self.commodity.code}-({self.start_month.month} {self.start_month.year} - {self.end_month.month} {self.end_month.year})"
-
-    # class Meta:
-    #     unique_together = ('contract_month', 'commodity')
-
-    
-
+        start_info = f"{self.start_month.month}{self.start_month.year}" if self.start_month else "N/A"
+        end_info = f"{self.end_month.month}{self.end_month.year}" if self.end_month else "N/A"
+        return f"{self.commodity.code}-({start_info} - {end_info})"
 
 class Trade(models.Model):
     TRADE_OPTIONS = [
@@ -100,39 +82,39 @@ class Trade(models.Model):
         self._original_fills_recivied_for = self.fills_recivied_for
 
 
-class Profit(models.Model):
-    trade = models.ForeignKey(Trade, on_delete=models.CASCADE, related_name='profits')
-    entry = models.DecimalField(max_digits=10, decimal_places=2)  # Entry price of the trade
-    booked_lots = models.PositiveIntegerField()
-    unbooked_lots = models.PositiveIntegerField()
-    exit_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)  # Price at which the trade was settled for booked lots
-    settlement_price_unbooked = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)  # Price at which the trade was settled for unbooked lots
-    profit = models.FloatField(null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now_add=True)
+# class Profit(models.Model):
+#     trade = models.ForeignKey(Trade, on_delete=models.CASCADE, related_name='profits')
+#     entry = models.DecimalField(max_digits=10, decimal_places=2)  # Entry price of the trade
+#     booked_lots = models.PositiveIntegerField()
+#     unbooked_lots = models.PositiveIntegerField()
+#     exit_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)  # Price at which the trade was settled for booked lots
+#     settlement_price_unbooked = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)  # Price at which the trade was settled for unbooked lots
+#     profit = models.FloatField(null=True, blank=True)
+#     created_at = models.DateTimeField(auto_now_add=True)
+#     updated_at = models.DateTimeField(auto_now_add=True)
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._original_exit_price = self.exit_price
-        self._original_settlement_price_unbooked = self.settlement_price_unbooked
+#     def __init__(self, *args, **kwargs):
+#         super().__init__(*args, **kwargs)
+#         self._original_exit_price = self.exit_price
+#         self._original_settlement_price_unbooked = self.settlement_price_unbooked
 
-    def _calculate_profit(self):
-        total_profit = Decimal('0.00')
+#     def _calculate_profit(self):
+#         total_profit = Decimal('0.00')
 
-        if self.exit_price is not None and self.booked_lots is not None and self.booked_lots > 0:
-            profit_per_lot = self.exit_price - self.entry
-            total_profit += profit_per_lot * self.booked_lots
+#         if self.exit_price is not None and self.booked_lots is not None and self.booked_lots > 0:
+#             profit_per_lot = self.exit_price - self.entry
+#             total_profit += profit_per_lot * self.booked_lots
 
-        if self.settlement_price_unbooked is not None and self.unbooked_lots is not None and self.unbooked_lots > 0:
-            profit_per_lot = self.settlement_price_unbooked - self.entry
-            total_profit += profit_per_lot * self.unbooked_lots
+#         if self.settlement_price_unbooked is not None and self.unbooked_lots is not None and self.unbooked_lots > 0:
+#             profit_per_lot = self.settlement_price_unbooked - self.entry
+#             total_profit += profit_per_lot * self.unbooked_lots
             
-        return float(total_profit) # Convert to float for the profit field
+#         return float(total_profit) # Convert to float for the profit field
         
 
 
-    def __str__(self):
-        return f"Profit for {self.trade.name} - {self.profit}"
+    # def __str__(self):
+    #     return f"Profit for {self.trade.name} - {self.profit}"
 
 class Exit(models.Model):
     EXIT_STATUSES = [
@@ -228,10 +210,3 @@ class Exit(models.Model):
             f"Exit for Trade {self.trade.id} ({self.trade.name}) - "
             f"{self.requested_exit_lots} lots requested at {self.exit_price or 'N/A'}"
         )
-# class Settlement(models.Model):
-#     trade = models.ForeignKey(Trade, on_delete=models.CASCADE, related_name='settlements')
-#     settlement_price = models.DecimalField(max_digits=10, decimal_places=2)
-#     created_at = models.DateTimeField(auto_now_add=True)
-
-#     def __str__(self):
-#         return f"Settlement for {self.trade.name} at {self.settlement_price} for {self.lots} lots"

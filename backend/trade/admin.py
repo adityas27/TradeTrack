@@ -1,11 +1,9 @@
 from django.contrib import admin
-from .models import Trade
-from .models import Commodity, ContractMonth, Availability, Profit, Exit, Settlement
+from .models import Trade, Commodity, Availability, Exit, Settlement
+
 # Register your models here.
-admin.site.register(Profit)
 admin.site.register(Exit)
 admin.site.register(Settlement)
-admin.site.register(Availability)
 
 @admin.register(Commodity)
 class CommodityAdmin(admin.ModelAdmin):
@@ -13,21 +11,12 @@ class CommodityAdmin(admin.ModelAdmin):
     search_fields = ('code', 'name')
     ordering = ('code',)
 
-
-@admin.register(ContractMonth)
-class ContractMonthAdmin(admin.ModelAdmin):
-    list_display = ('label', 'start_month', 'start_year', 'end_month', 'end_year')
-    search_fields = ('label',)
-    list_filter = ('start_year', 'end_year')
-    ordering = ('start_year', 'start_month')
-
-
-# @admin.register(Availability)
-# class AvailabilityAdmin(admin.ModelAdmin):
-#     list_display = ('contract_month', 'commodity', 'is_available')
-#     list_filter = ('contract_month', 'commodity', 'is_available')
-#     search_fields = ('contract_month__label', 'commodity__code')
-#     ordering = ('contract_month__start_year', 'contract_month__start_month', 'commodity__code')
+@admin.register(Availability)
+class AvailabilityAdmin(admin.ModelAdmin):
+    list_display = ('commodity', 'start_month', 'end_month', 'is_available', 'settlement_price')
+    list_filter = ('is_available', 'commodity')
+    search_fields = ('commodity__code', 'commodity__name')
+    ordering = ('commodity__code',)
 
 @admin.register(Trade)
 class TradeAdmin(admin.ModelAdmin):
@@ -44,14 +33,17 @@ class TradeAdmin(admin.ModelAdmin):
         'approved_at',
         'order_placed_at',
         'fills_received_at',
+        'is_closed',
+        'close_accepted',
     )
-    list_filter = ('status', 'trade_type', 'trader')
-    search_fields = ('name', 'trader__username')
+    list_filter = ('status', 'trade_type', 'trader', 'is_closed', 'close_accepted')
+    search_fields = ('name__commodity__code', 'trader__username')
     readonly_fields = (
         'created_at',
         'approved_at',
         'order_placed_at',
         'fills_received_at',
+        'close_requested_at',
     )
     ordering = ('-created_at',)
 

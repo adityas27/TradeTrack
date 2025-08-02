@@ -8,10 +8,38 @@ from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 from decimal import Decimal
 
-from .models import Trade, Availability, Profit, Exit
+from .models import Trade, Availability, Exit, Commodity, Settlement
 from django.db.models import Q
-from .serializers import TradeSerializer, ProfitSerializer, ExitSerializer
+from .serializers import TradeSerializer, ExitSerializer
 from django.shortcuts import get_object_or_404
+
+def notify_trade_update(trade):
+    """Helper function to send trade updates via WebSocket"""
+    try:
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(
+            'trades',
+            {
+                'type': 'trade_update',
+                'trade': TradeSerializer(trade).data
+            }
+        )
+    except Exception as e:
+        print(f"WebSocket notification failed for trade {trade.id}: {e}")
+
+def notify_exit_update(exit_obj):
+    """Helper function to send exit updates via WebSocket"""
+    try:
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(
+            f'trade_{exit_obj.trade.id}',
+            {
+                'type': 'exit_update',
+                'exit': ExitSerializer(exit_obj).data
+            }
+        )
+    except Exception as e:
+        print(f"WebSocket notification failed for exit {exit_obj.id}: {e}")
 
 class CreateTradeView(generics.CreateAPIView):
     serializer_class = TradeSerializer
@@ -22,23 +50,11 @@ class CreateTradeView(generics.CreateAPIView):
         serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():
             trade = serializer.save(trader=self.request.user)
-            self.notify_ws_clients(trade)
+            notify_trade_update(trade)
             return Response(TradeSerializer(trade).data, status=status.HTTP_201_CREATED)
         else:
             print("Serializer errors:", serializer.errors)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
-
-
-    def notify_ws_clients(self, trade):
-        channel_layer = get_channel_layer()
-        async_to_sync(channel_layer.group_send)(
-            'trades', # Send to the general 'trades' group
-            {
-                'type': 'trade_update', # <-- Consistent message type
-                'trade': TradeSerializer(trade).data
-            }
-        )
 
 class TradePagination(PageNumberPagination):
     page_size = 10  # This must match API_PAGE_SIZE in your React frontend
@@ -68,7 +84,7 @@ def update_trade_status(request, trade_id):
 
     new_status = request.data.get("status")
 
-    if new_status not in ['approved', 'order_placed', 'fills_received']:
+    if new_status not in ['approved', 'order_placed']:
         return Response({"error": "Invalid status."}, status=status.HTTP_400_BAD_REQUEST)
 
     # Only managers (or specific roles) should be able to update these statuses
@@ -84,41 +100,51 @@ def update_trade_status(request, trade_id):
         trade.order_placed_at = now()
         trade.status = new_status
 
-    elif new_status == 'fills_received':
-        if trade.fills_recivied_for+ int(request.data.get("fills_received_for")) > trade.lots:
-            return Response({"error": "Cannot exceed total lots."}, status=status.HTTP_400_BAD_REQUEST)
-        trade.fills_recivied_for = trade.fills_recivied_for+int(request.data.get("fills_received_for"))
-        trade.fills_received_of = request.data.get("fills_received_of")
-        trade.fills_received_at = now()
-
-    # trade.status = new_status
     trade.save()
+    notify_trade_update(trade)
 
-    # Notify all connected clients in the 'trades' group via WebSocket
-    channel_layer = get_channel_layer()
-    async_to_sync(channel_layer.group_send)(
-        'trades', # Send to the general 'trades' group
-        {
-            'type': 'trade_update', # <-- Consistent message type
-            'trade': TradeSerializer(trade).data,
-        }
-    )
+    return Response(TradeSerializer(trade).data)
+
+@api_view(['PATCH'])
+@permission_classes([permissions.IsAuthenticated])
+def update_fills_received(request, trade_id):
+    """Update fills received for a trade - status will be updated by signals"""
+    try:
+        trade = Trade.objects.get(id=trade_id)
+    except Trade.DoesNotExist:
+        return Response({"error": "Trade not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    fills_received_for = int(request.data.get("fills_received_for", 0))
+    fills_received_of = request.data.get("fills_received_of", trade.fills_received_of)
+
+    if trade.fills_recivied_for + fills_received_for > trade.lots:
+        return Response({"error": "Cannot exceed total lots."}, status=status.HTTP_400_BAD_REQUEST)
+
+    trade.fills_recivied_for = trade.fills_recivied_for + fills_received_for
+    trade.fills_received_of = fills_received_of
+    trade.fills_received_at = now()
+    
+    # Status will be automatically updated by signals based on fills_recivied_for
+    trade.save()
+    notify_trade_update(trade)
 
     return Response(TradeSerializer(trade).data)
 
 @api_view(['GET'])
 def get_availabilities(request):
     search = request.GET.get('search', '').strip().lower()
-    qs = Availability.objects.filter(is_available=True).select_related('commodity', 'contract_month')
+    qs = Availability.objects.filter(is_available=True).select_related(
+        'commodity', 'start_month', 'end_month'
+    )
 
     if search:
         keywords = search.split()
-
         for kw in keywords:
             qs = qs.filter(
                 Q(commodity__name__icontains=kw) |
                 Q(commodity__code__icontains=kw) |
-                Q(contract_month__label__icontains=kw)
+                Q(start_month__month__icontains=kw) |
+                Q(end_month__month__icontains=kw)
             )
 
     data = [
@@ -126,7 +152,9 @@ def get_availabilities(request):
             "id": a.id,
             "commodity_name": a.commodity.name,
             "commodity_code": a.commodity.code,
-            "contract_label": a.contract_month.label,
+            "start_month": f"{a.start_month.month}{a.start_month.year}" if a.start_month else "N/A",
+            "end_month": f"{a.end_month.month}{a.end_month.year}" if a.end_month else "N/A",
+            "settlement_price": a.settlement_price,
         }
         for a in qs.distinct()[:20]  # limit to 20 results for speed
     ]
@@ -141,23 +169,13 @@ def update_close(request, trade_id):
     except Trade.DoesNotExist:
         return Response({"error": "Trade not found."}, status=status.HTTP_404_NOT_FOUND)
 
-
     if trade.is_closed:
         return Response({"error": "Request is already sent."}, status=status.HTTP_400_BAD_REQUEST)
 
     trade.close_requested_at = now()
     trade.is_closed = True
     trade.save()
-
-    # Notify all connected clients in the 'trades' group via WebSocket
-    channel_layer = get_channel_layer()
-    async_to_sync(channel_layer.group_send)(
-        'trades', # Send to the general 'trades' group
-        {
-            'type': 'trade_update', # <-- Consistent message type
-            'trade': TradeSerializer(trade).data,
-        }
-    )
+    notify_trade_update(trade)
 
     return Response(TradeSerializer(trade).data)
 
@@ -188,16 +206,7 @@ def accept_close(request, trade_id):
 
     trade.close_accepted = True
     trade.save()
-
-    # WebSocket notification to all managers
-    channel_layer = get_channel_layer()
-    async_to_sync(channel_layer.group_send)(
-        'trades',
-        {
-            'type': 'trade_update',
-            'trade': TradeSerializer(trade).data
-        }
-    )
+    notify_trade_update(trade)
 
     return Response(TradeSerializer(trade).data)
 
@@ -206,65 +215,6 @@ def accept_close(request, trade_id):
 def closed_trades(request):
     trades = Trade.objects.filter(is_closed=True, close_accepted=True).order_by('-fills_received_at')
     serializer = TradeSerializer(trades, many=True)
-    return Response(serializer.data)
-
-@api_view(['PATCH'])
-@permission_classes([permissions.IsAuthenticated])
-def set_settlement_price(request, pk):
-    try:
-        trade = Trade.objects.get(pk=pk)
-
-        if not request.user.is_staff:  # or custom manager check
-            return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
-
-        settlement_price = request.data.get("settlement_price")
-        if settlement_price is None:
-            return Response({"error": "Settlement price required"}, status=status.HTTP_400_BAD_REQUEST)
-
-        trade.settlement_price = float(settlement_price)
-        trade.calculate_profit()
-
-        return Response({"message": "Settlement price set", "profit": trade.profit}, status=status.HTTP_200_OK)
-
-    except Trade.DoesNotExist:
-        return Response({"error": "Trade not found"}, status=status.HTTP_404_NOT_FOUND)
-
-@api_view(['POST'])
-@permission_classes([permissions.IsAuthenticated])
-def create_profit(request, trade_id):
-    trade = get_object_or_404(Trade, id=trade_id)
-    
-    initial_data = {
-        'trade': trade.id,
-        'entry': trade.price,
-        **request.data
-    }
-
-    serializer = ProfitSerializer(data=initial_data)
-    serializer.is_valid(raise_exception=True)
-    serializer.save()
-    
-    return Response(serializer.data, status=status.HTTP_201_CREATED)
-
-@api_view(['PATCH'])
-@permission_classes([permissions.IsAuthenticated])
-def update_profit(request, pk):
-    profit_instance = get_object_or_404(Profit, id=pk)
-
-    data_to_update = {}
-    if 'exit_price' in request.data:
-        data_to_update['exit_price'] = request.data['exit_price']
-    if 'settlement_price_unbooked' in request.data:
-        data_to_update['settlement_price_unbooked'] = request.data['settlement_price_unbooked']
-    if 'exit_price' in request.data:
-        data_to_update['exit_price'] = request.data['exit_price']
-    if 'settlement_price_unbooked' in request.data:
-        data_to_update['settlement_price_unbooked'] = request.data['settlement_price_unbooked']
-
-    serializer = ProfitSerializer(profit_instance, data=data_to_update, partial=True)
-    serializer.is_valid(raise_exception=True)
-    serializer.save()
-
     return Response(serializer.data)
 
 @api_view(['POST'])
@@ -282,17 +232,7 @@ def create_exit(request):
 
     if serializer.is_valid():
         exit_obj = serializer.save(exit_initiated_by=request.user)
-
-        # Notify via WebSocket
-        channel_layer = get_channel_layer()
-        async_to_sync(channel_layer.group_send)(
-            f'trade_{trade.id}',  # or 'trades' if global
-            {
-                'type': 'exit_created',
-                'exit': ExitSerializer(exit_obj).data
-            }
-        )
-
+        notify_exit_update(exit_obj)
         return Response(ExitSerializer(exit_obj).data, status=status.HTTP_201_CREATED)
 
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -300,13 +240,13 @@ def create_exit(request):
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
 def my_exit_requests(request):
-    exits = Exit.objects.filter(user=request.user).order_by('-requested_at')
+    exits = Exit.objects.filter(exit_initiated_by=request.user).order_by('-requested_at')
     serializer = ExitSerializer(exits, many=True)
     return Response(serializer.data)
 
 @api_view(['GET'])
-@permission_classes([permissions.IsAuthenticated])
-def exit_requests(request):
+@permission_classes([permissions.IsAdminUser])
+def all_exit_requests(request):
     exits = Exit.objects.all().order_by('-requested_at')
     serializer = ExitSerializer(exits, many=True)
     return Response(serializer.data)
@@ -319,32 +259,28 @@ def update_exit_status(request, exit_id):
     except Exit.DoesNotExist:
         return Response({"error": "Exit not found."}, status=status.HTTP_404_NOT_FOUND)
 
-    new_status = request.data.get("new_status")
+    new_status = request.data.get("exit_status")
+    received_lots = request.data.get("recieved_lots", 0)
     
-    if new_status == 'order_placed':
+    if new_status == 'approved':
+        exit_obj.exit_status = 'approved'
+        exit_obj.exit_approved_by = request.user
+        exit_obj.approved_at = now()
+    elif new_status == 'order_placed':
         exit_obj.exit_status = 'order_placed'
-        exit_obj.save(update_fields=['exit_status'])
-    else:
-        if request.data.get("recieved_lots") > exit_obj.requested_exit_lots:
+        exit_obj.order_placed_at = now()
+    elif new_status in ['filled', 'partial_filled']:
+        if received_lots > exit_obj.requested_exit_lots:
             return Response({"error": "Received lots cannot exceed requested exit lots."}, status=status.HTTP_400_BAD_REQUEST)
          
-        exit_obj.recieved_lots = int(request.data.get("recieved_lots"))
-        if exit_obj.recieved_lots == exit_obj.requested_exit_lots:
-            exit_obj.exit_status = 'filled'
-        elif exit_obj.recieved_lots < exit_obj.requested_exit_lots:
-            exit_obj.exit_status = 'partial_filled'
+        exit_obj.recieved_lots = int(received_lots)
+        exit_obj.filled_at = now()
+        # Status, is_closed, and profit_loss will be calculated by signals
+    elif new_status in ['rejected', 'cancelled']:
+        exit_obj.exit_status = new_status
 
     exit_obj.save()
-
-    # WebSocket notify
-    channel_layer = get_channel_layer()
-    async_to_sync(channel_layer.group_send)(
-        f'trade_{exit_obj.trade.id}',  # or 'trades' if global
-        {
-            'type': 'exit_update',
-            'exit': ExitSerializer(exit_obj).data
-        }
-    )
+    notify_exit_update(exit_obj)
 
     return Response(ExitSerializer(exit_obj).data)
 
@@ -385,15 +321,6 @@ def add_lots_to_trade(request, trade_id):
     trade.lots = total_lots
     trade.price = avg_price
     trade.save()
-
-    # Optionally notify via WebSocket
-    channel_layer = get_channel_layer()
-    async_to_sync(channel_layer.group_send)(
-        'trades',
-        {
-            'type': 'trade_update',
-            'trade': TradeSerializer(trade).data,
-        }
-    )
+    notify_trade_update(trade)
 
     return Response(TradeSerializer(trade).data, status=status.HTTP_200_OK)

@@ -1,33 +1,32 @@
 from django.db.models.signals import post_save
 from django.dispatch import receiver
-from .models import Profit, Trade, Exit # Import your Profit model
+from .models import Trade, Exit # Import your Profit model
 from decimal import Decimal
-from .serializers import TradeSerializer
+from .serializers import TradeSerializer, ExitSerializer
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 # Removed the pre_init signal handler.
 # The __init__ method in the Profit model now handles storing original values.
 
-@receiver(post_save, sender=Profit)
-def recalculate_profit_on_save(sender, instance, created, **kwargs):
-    original_exit_price = instance._original_exit_price
-    original_settlement_price_unbooked = instance._original_settlement_price_unbooked
-    exit_price_changed = instance.exit_price != original_exit_price
-    settlement_price_unbooked_changed = instance.settlement_price_unbooked != original_settlement_price_unbooked
+# @receiver(post_save, sender=Profit)
+# def recalculate_profit_on_save(sender, instance, created, **kwargs):
+#     original_exit_price = instance._original_exit_price
+#     original_settlement_price_unbooked = instance._original_settlement_price_unbooked
+#     exit_price_changed = instance.exit_price != original_exit_price
+#     settlement_price_unbooked_changed = instance.settlement_price_unbooked != original_settlement_price_unbooked
     
-    if created or instance.profit is None or exit_price_changed or settlement_price_unbooked_changed:
-        old_profit = instance.profit
-        new_profit = instance._calculate_profit()
+#     if created or instance.profit is None or exit_price_changed or settlement_price_unbooked_changed:
+#         old_profit = instance.profit
+#         new_profit = instance._calculate_profit()
         
-        if new_profit != old_profit:
-            instance.profit = new_profit
+#         if new_profit != old_profit:
+#             instance.profit = new_profit
 
-            instance.save(update_fields=['profit']) 
-            print(f"Profit for Trade {instance.trade_id} recalculated: {old_profit} -> {new_profit}")
+#             instance.save(update_fields=['profit']) 
+#             print(f"Profit for Trade {instance.trade_id} recalculated: {old_profit} -> {new_profit}")
 
 @receiver(post_save, sender=Trade)
 def update_status_on_fills_change(sender, instance, created, **kwargs):
-
     original_fills_recivied_for = instance._original_fills_recivied_for
     
     fills_recivied_for_changed = instance.fills_recivied_for != original_fills_recivied_for
@@ -46,7 +45,7 @@ def update_status_on_fills_change(sender, instance, created, **kwargs):
         
         if new_status != old_status:
             instance.save(update_fields=['status']) 
-            print(f"Profit for Trade {instance.id} recalculated: {old_status} -> {new_status}")
+            print(f"Status for Trade {instance.id} updated: {old_status} -> {new_status}")
 
 @receiver(post_save, sender=Exit)
 def update_exit_on_save(sender, instance, created, **kwargs):
