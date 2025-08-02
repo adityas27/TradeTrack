@@ -8,6 +8,7 @@ User = get_user_model()
 class Commodity(models.Model):
     code = models.CharField(max_length=20, unique=True)
     name = models.CharField(max_length=100, blank=True)
+    description = models.TextField(blank=True, null=True)
 
     def __str__(self):
         return self.code
@@ -26,16 +27,24 @@ class ContractMonth(models.Model):
     def __str__(self):
         return self.label
 
+class Settlement(models.Model):
+    commodity = models.ForeignKey(Commodity, on_delete=models.CASCADE, related_name='settlements')
+    settlement_price = models.DecimalField(max_digits=10, decimal_places=2)
+    month = models.CharField(max_length=20)  # E.g. "Jan25"
+    year = models.IntegerField()  # E.g. 2025
+
 class Availability(models.Model):
-    contract_month = models.ForeignKey(ContractMonth, on_delete=models.CASCADE)
     commodity = models.ForeignKey(Commodity, on_delete=models.CASCADE)
+    start_month = models.ForeignKey(Settlement, on_delete=models.CASCADE, related_name="start", default=None, null=True)
+    end_month = models.ForeignKey(Settlement, on_delete=models.CASCADE, related_name="end", default=None, null=True)
+    settlement_price = models.FloatField(default=0)
     is_available = models.BooleanField()
 
     def __str__(self):
-        return f"{self.commodity.code}-{self.contract_month.label} ({self.contract_month.start_month} {self.contract_month.start_year} - {self.contract_month.end_month} {self.contract_month.end_year})"
+        return f"{self.commodity.code}-({self.start_month.month} {self.start_month.year} - {self.end_month.month} {self.end_month.year})"
 
-    class Meta:
-        unique_together = ('contract_month', 'commodity')
+    # class Meta:
+    #     unique_together = ('contract_month', 'commodity')
 
     
 
@@ -89,6 +98,7 @@ class Trade(models.Model):
         super().__init__(*args, **kwargs)
         
         self._original_fills_recivied_for = self.fills_recivied_for
+
 
 class Profit(models.Model):
     trade = models.ForeignKey(Trade, on_delete=models.CASCADE, related_name='profits')

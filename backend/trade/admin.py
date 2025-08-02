@@ -1,10 +1,11 @@
 from django.contrib import admin
 from .models import Trade
-from .models import Commodity, ContractMonth, Availability, Profit, Exit
-
+from .models import Commodity, ContractMonth, Availability, Profit, Exit, Settlement
 # Register your models here.
 admin.site.register(Profit)
 admin.site.register(Exit)
+admin.site.register(Settlement)
+admin.site.register(Availability)
 
 @admin.register(Commodity)
 class CommodityAdmin(admin.ModelAdmin):
@@ -21,12 +22,12 @@ class ContractMonthAdmin(admin.ModelAdmin):
     ordering = ('start_year', 'start_month')
 
 
-@admin.register(Availability)
-class AvailabilityAdmin(admin.ModelAdmin):
-    list_display = ('contract_month', 'commodity', 'is_available')
-    list_filter = ('contract_month', 'commodity', 'is_available')
-    search_fields = ('contract_month__label', 'commodity__code')
-    ordering = ('contract_month__start_year', 'contract_month__start_month', 'commodity__code')
+# @admin.register(Availability)
+# class AvailabilityAdmin(admin.ModelAdmin):
+#     list_display = ('contract_month', 'commodity', 'is_available')
+#     list_filter = ('contract_month', 'commodity', 'is_available')
+#     search_fields = ('contract_month__label', 'commodity__code')
+#     ordering = ('contract_month__start_year', 'contract_month__start_month', 'commodity__code')
 
 @admin.register(Trade)
 class TradeAdmin(admin.ModelAdmin):

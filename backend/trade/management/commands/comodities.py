@@ -2,7 +2,7 @@ from django.core.management.base import BaseCommand
 from trade.models import Commodity
 from calendar import month_abbr
 import datetime
-
+    
 class Command(BaseCommand):
     help = 'Populates ContractMonth and Commodity tables'
 
