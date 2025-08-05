@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from .models import Trade, Exit
+from django.db.models import Sum
 
 class TradeSerializer(serializers.ModelSerializer):
     trader_username = serializers.CharField(source='trader.username', read_only=True)
@@ -107,3 +108,56 @@ class ExitSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Received lots cannot exceed requested lots.")
 
         return data
+    
+class NestedExitSerializer(serializers.ModelSerializer):
+    # Custom field to get the status display name
+    status_display = serializers.CharField(source='get_exit_status_display', read_only=True)
+
+    class Meta:
+        model = Exit
+        fields = ['requested_exit_lots', 'exit_price', 'recieved_lots', 'status_display', 'requested_at']
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        
+        # Mapping the model's status to the UI's specific labels
+        ui_status_mapping = {
+            'Pending Approval': 'order placed',
+            'Approved': 'order placed',
+            'Exit Order Placed': 'order placed',
+            'Partially Filled': 'partial fills recieved',
+            'Completely Filled': 'fills recieved',
+            'Rejected': 'order placed',
+            'Cancelled': 'order placed',
+        }
+        
+        # Get the status value, and use .get() to avoid a KeyError if it's missing
+        status_value = representation.pop('status_display', None)
+        
+        # Check if status_value exists before trying to map it
+        if status_value:
+            representation['status_display'] = ui_status_mapping.get(status_value, status_value)
+        
+        representation['date_of_creation'] = representation.pop('requested_at')
+        
+        return representation
+
+class TradeWithExitsSerializer(serializers.ModelSerializer):
+    # This serializer represents a single Trade and includes all its exits as a nested list
+    
+    # We use SerializerMethodField to aggregate lots from all related exits
+    recieved_lots_total_lots = serializers.SerializerMethodField()
+    
+    # We use the NestedExitSerializer with many=True to serialize all related exit events
+    applied_exits = NestedExitSerializer(source='exit_events', many=True, read_only=True)
+    
+    class Meta:
+        model = Trade
+        fields = ['id', 'created_at', 'lots', 'recieved_lots_total_lots', 'applied_exits']
+
+    def get_recieved_lots_total_lots(self, obj):
+        # Calculate the sum of received lots from all exits for this trade
+        recieved_lots = obj.exit_events.aggregate(total_recieved_lots=Sum('recieved_lots'))['total_recieved_lots'] or 0
+        total_lots = obj.lots
+        
+        return f"{recieved_lots}/{total_lots}"

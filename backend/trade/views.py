@@ -10,7 +10,9 @@ from decimal import Decimal
 
 from .models import Trade, Availability, Exit, Commodity, Settlement
 from django.db.models import Q
-from .serializers import TradeSerializer, ExitSerializer
+from .serializers import TradeSerializer, ExitSerializer, NestedExitSerializer, TradeWithExitsSerializer
+from django.db.models import Prefetch
+from django.utils import timezone
 from django.shortcuts import get_object_or_404
 
 def notify_trade_update(trade):
@@ -40,21 +42,22 @@ def notify_exit_update(exit_obj):
         )
     except Exception as e:
         print(f"WebSocket notification failed for exit {exit_obj.id}: {e}")
+        
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def create_trade(request):
+    """
+    Function-based view to create a new Trade.
+    """
+    serializer = TradeSerializer(data=request.data)
+    if serializer.is_valid():
+        # Explicitly set status to 'pending' for new trades
+        trade = serializer.save(trader=request.user, status='pending')
+        notify_trade_update(trade)
+        return Response(TradeSerializer(trade).data, status=status.HTTP_201_CREATED)
+    else:
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-class CreateTradeView(generics.CreateAPIView):
-    serializer_class = TradeSerializer
-    permission_classes = [permissions.IsAuthenticated]
-    
-    def create(self, request, *args, **kwargs):
-        print(request.data)
-        serializer = self.get_serializer(data=request.data)
-        if serializer.is_valid():
-            trade = serializer.save(trader=self.request.user)
-            notify_trade_update(trade)
-            return Response(TradeSerializer(trade).data, status=status.HTTP_201_CREATED)
-        else:
-            print("Serializer errors:", serializer.errors)
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class TradePagination(PageNumberPagination):
     page_size = 10  # This must match API_PAGE_SIZE in your React frontend
@@ -132,31 +135,55 @@ def update_fills_received(request, trade_id):
 
 @api_view(['GET'])
 def get_availabilities(request):
-    search = request.GET.get('search', '').strip().lower()
+    # Get the 5 parameters from query string
+    start_month = request.GET.get('start_month')
+    end_month = request.GET.get('end_month')
+    start_year = request.GET.get('start_year')
+    end_year = request.GET.get('end_year')
+    code = request.GET.get('code')
+    
+    # Start with base queryset
     qs = Availability.objects.filter(is_available=True).select_related(
         'commodity', 'start_month', 'end_month'
     )
-
-    if search:
-        keywords = search.split()
-        for kw in keywords:
-            qs = qs.filter(
-                Q(commodity__name__icontains=kw) |
-                Q(commodity__code__icontains=kw) |
-                Q(start_month__month__icontains=kw) |
-                Q(end_month__month__icontains=kw)
-            )
-
+    
+    # Apply filters based on provided parameters
+    if code:
+        qs = qs.filter(commodity__code__iexact=code)
+    
+    if start_month and start_year:
+        try:
+            qs = qs.filter(start_month__month__iexact=start_month, start_month__year=int(start_year))
+        except ValueError:
+            return Response({"error": "Invalid start year format"}, status=status.HTTP_400_BAD_REQUEST)
+    
+    if end_month and end_year:
+        try:
+            qs = qs.filter(end_month__month__iexact=end_month, end_month__year=int(end_year))
+        except ValueError:
+            return Response({"error": "Invalid end year format"}, status=status.HTTP_400_BAD_REQUEST)
+    
+    # If no parameters provided, return all available availabilities
+    if not any([start_month, end_month, start_year, end_year, code]):
+        qs = qs[:20]  # limit to 20 results for speed
+    else:
+        # If specific parameters provided, get exact match (single availability)
+        qs = qs[:1]  # limit to 1 result for exact match
+    
     data = [
         {
             "id": a.id,
             "commodity_name": a.commodity.name,
             "commodity_code": a.commodity.code,
-            "start_month": f"{a.start_month.month}{a.start_month.year}" if a.start_month else "N/A",
-            "end_month": f"{a.end_month.month}{a.end_month.year}" if a.end_month else "N/A",
+            "start_month": a.start_month.month if a.start_month else "N/A",
+            "start_year": a.start_month.year if a.start_month else "N/A",
+            "end_month": a.end_month.month if a.end_month else "N/A",
+            "end_year": a.end_month.year if a.end_month else "N/A",
+            "period_display": f"{a.start_month.month}{a.start_month.year} to {a.end_month.month}{a.end_month.year}" if a.start_month and a.end_month else "N/A",
             "settlement_price": a.settlement_price,
+            "is_available": a.is_available,
         }
-        for a in qs.distinct()[:20]  # limit to 20 results for speed
+        for a in qs
     ]
 
     return Response(data)
@@ -227,37 +254,50 @@ def create_exit(request):
 
     if trade.trader != request.user:
         return Response({"error": "Not allowed to exit this trade."}, status=status.HTTP_403_FORBIDDEN)
-
-    serializer = ExitSerializer(data=request.data)
-
+    data = request.data.copy()
+    data['exit_initiated_by'] = request.user.id
+    serializer = ExitSerializer(data=data)
     if serializer.is_valid():
         exit_obj = serializer.save(exit_initiated_by=request.user)
         notify_exit_update(exit_obj)
         return Response(ExitSerializer(exit_obj).data, status=status.HTTP_201_CREATED)
+    print(serializer.errors)
 
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
 def my_exit_requests(request):
-    exits = Exit.objects.filter(exit_initiated_by=request.user).order_by('-requested_at')
-    serializer = ExitSerializer(exits, many=True)
+    # Prefetch all exit events for the user's trades to reduce database queries
+    trades = Trade.objects.filter(
+        trader=request.user,
+        is_closed=False
+    ).prefetch_related(
+        Prefetch('exit_events', queryset=Exit.objects.order_by('-requested_at'))
+    ).order_by('-created_at')
+
+    # Use the new serializer that groups exits by trade
+    serializer = TradeWithExitsSerializer(trades, many=True)
     return Response(serializer.data)
 
 @api_view(['GET'])
 @permission_classes([permissions.IsAdminUser])
 def all_exit_requests(request):
-    exits = Exit.objects.all().order_by('-requested_at')
-    serializer = ExitSerializer(exits, many=True)
+    # Prefetch all exit events for all trades
+    trades = Trade.objects.filter(
+        is_closed=False
+    ).prefetch_related(
+        Prefetch('exit_events', queryset=Exit.objects.order_by('-requested_at'))
+    ).order_by('-created_at')
+
+    # Use the new serializer that groups exits by trade
+    serializer = TradeWithExitsSerializer(trades, many=True)
     return Response(serializer.data)
 
 @api_view(['PATCH'])
 @permission_classes([permissions.IsAuthenticated])
 def update_exit_status(request, exit_id):
-    try:
-        exit_obj = Exit.objects.get(id=exit_id)
-    except Exit.DoesNotExist:
-        return Response({"error": "Exit not found."}, status=status.HTTP_404_NOT_FOUND)
+    exit_obj = get_object_or_404(Exit, pk=exit_id)
 
     new_status = request.data.get("exit_status")
     received_lots = request.data.get("recieved_lots", 0)
@@ -272,7 +312,7 @@ def update_exit_status(request, exit_id):
     elif new_status in ['filled', 'partial_filled']:
         if received_lots > exit_obj.requested_exit_lots:
             return Response({"error": "Received lots cannot exceed requested exit lots."}, status=status.HTTP_400_BAD_REQUEST)
-         
+          
         exit_obj.recieved_lots = int(received_lots)
         exit_obj.filled_at = now()
         # Status, is_closed, and profit_loss will be calculated by signals
@@ -282,7 +322,11 @@ def update_exit_status(request, exit_id):
     exit_obj.save()
     notify_exit_update(exit_obj)
 
-    return Response(ExitSerializer(exit_obj).data)
+    # Serialize the updated single exit object with the nested serializer
+    # This assumes the frontend can handle an individual exit update
+    serializer = NestedExitSerializer(exit_obj)
+    return Response(serializer.data)
+
 
 @api_view(['PATCH'])
 @permission_classes([permissions.IsAuthenticated])

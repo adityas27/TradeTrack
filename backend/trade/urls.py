@@ -1,10 +1,10 @@
 from django.urls import path
-from .views import (CreateTradeView, ManagerTradeListView, UserTradeListView, update_trade_status, update_fills_received, get_availabilities, update_close, my_trades,
+from .views import (create_trade, ManagerTradeListView, UserTradeListView, update_trade_status, update_fills_received, get_availabilities, update_close, my_trades,
                     pending_close_requests, accept_close, closed_trades,
                     create_exit, update_exit_status, my_exit_requests, all_exit_requests, add_lots_to_trade)
 
 urlpatterns = [
-    path('apply/', CreateTradeView.as_view(), name='apply-trade'),
+    path('apply/', create_trade, name='apply-trade'),
     path('manager/', ManagerTradeListView.as_view(), name='manager-trades'),
     path('my/', UserTradeListView.as_view(), name='user-trades'),
     path("trades/<int:trade_id>/update-status/", update_trade_status, name="update-trade-status"),

@@ -5,25 +5,6 @@ from decimal import Decimal
 from .serializers import TradeSerializer, ExitSerializer
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
-# Removed the pre_init signal handler.
-# The __init__ method in the Profit model now handles storing original values.
-
-# @receiver(post_save, sender=Profit)
-# def recalculate_profit_on_save(sender, instance, created, **kwargs):
-#     original_exit_price = instance._original_exit_price
-#     original_settlement_price_unbooked = instance._original_settlement_price_unbooked
-#     exit_price_changed = instance.exit_price != original_exit_price
-#     settlement_price_unbooked_changed = instance.settlement_price_unbooked != original_settlement_price_unbooked
-    
-#     if created or instance.profit is None or exit_price_changed or settlement_price_unbooked_changed:
-#         old_profit = instance.profit
-#         new_profit = instance._calculate_profit()
-        
-#         if new_profit != old_profit:
-#             instance.profit = new_profit
-
-#             instance.save(update_fields=['profit']) 
-#             print(f"Profit for Trade {instance.trade_id} recalculated: {old_profit} -> {new_profit}")
 
 @receiver(post_save, sender=Trade)
 def update_status_on_fills_change(sender, instance, created, **kwargs):
@@ -31,7 +12,8 @@ def update_status_on_fills_change(sender, instance, created, **kwargs):
     
     fills_recivied_for_changed = instance.fills_recivied_for != original_fills_recivied_for
 
-    if created or instance.status is None or fills_recivied_for_changed:
+    # Only update status if fills have changed (not on initial creation)
+    if not created and fills_recivied_for_changed:
         old_status = instance.status
         if instance.fills_recivied_for == instance.lots:
             instance.status = 'fills_received'
@@ -40,8 +22,8 @@ def update_status_on_fills_change(sender, instance, created, **kwargs):
             instance.status = 'partial_fills_received'
             new_status = 'partial_fills_received'
         else:
-            instance.status = 'order_placed'
-            new_status = 'order_placed'
+            # Keep the current status if fills are 0 (don't change from pending to pending)
+            new_status = old_status
         
         if new_status != old_status:
             instance.save(update_fields=['status']) 

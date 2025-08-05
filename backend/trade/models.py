@@ -85,39 +85,6 @@ class Trade(models.Model):
         self._original_fills_recivied_for = self.fills_recivied_for
 
 
-# class Profit(models.Model):
-#     trade = models.ForeignKey(Trade, on_delete=models.CASCADE, related_name='profits')
-#     entry = models.DecimalField(max_digits=10, decimal_places=2)  # Entry price of the trade
-#     booked_lots = models.PositiveIntegerField()
-#     unbooked_lots = models.PositiveIntegerField()
-#     exit_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)  # Price at which the trade was settled for booked lots
-#     settlement_price_unbooked = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)  # Price at which the trade was settled for unbooked lots
-#     profit = models.FloatField(null=True, blank=True)
-#     created_at = models.DateTimeField(auto_now_add=True)
-#     updated_at = models.DateTimeField(auto_now_add=True)
-
-#     def __init__(self, *args, **kwargs):
-#         super().__init__(*args, **kwargs)
-#         self._original_exit_price = self.exit_price
-#         self._original_settlement_price_unbooked = self.settlement_price_unbooked
-
-#     def _calculate_profit(self):
-#         total_profit = Decimal('0.00')
-
-#         if self.exit_price is not None and self.booked_lots is not None and self.booked_lots > 0:
-#             profit_per_lot = self.exit_price - self.entry
-#             total_profit += profit_per_lot * self.booked_lots
-
-#         if self.settlement_price_unbooked is not None and self.unbooked_lots is not None and self.unbooked_lots > 0:
-#             profit_per_lot = self.settlement_price_unbooked - self.entry
-#             total_profit += profit_per_lot * self.unbooked_lots
-            
-#         return float(total_profit) # Convert to float for the profit field
-        
-
-
-    # def __str__(self):
-    #     return f"Profit for {self.trade.name} - {self.profit}"
 
 class Exit(models.Model):
     EXIT_STATUSES = [
