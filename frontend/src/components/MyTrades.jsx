@@ -172,7 +172,7 @@ const MyTrades = () => {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <div className="flex space-x-2">
-                      {trade.status === 'approved' && (
+                      {!trade.is_closed && (
                         <button
                           onClick={() => openAddLotsModal(trade)}
                           className="text-blue-600 hover:text-blue-900 text-xs"
@@ -180,14 +180,12 @@ const MyTrades = () => {
                           Add Lots
                         </button>
                       )}
-                      {trade.status === 'fills_received' && !trade.is_closed && (
                         <button
                           onClick={() => openExitModal(trade)}
                           className="text-red-600 hover:text-red-900 text-xs"
                         >
                           Exit
                         </button>
-                      )}
                     </div>
                   </td>
                 </tr>
