@@ -68,7 +68,7 @@ const ManagerExitList = () => {
       setError("Received lots cannot exceed requested lots.");
       return;
     }
-
+console.log(selectedExit)
     try {
       const res = await api.patch(`trades/exits/${selectedExit.id}/update/`, {
         recieved_lots: parseInt(receivedLots),
@@ -162,7 +162,7 @@ const ManagerExitList = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <div className="flex space-x-2">
-                        {(exit.status_display === 'order placed' && exit.requested_exit_lots > 0) && (
+                        {(exit.status_display === 'order placed' || parseInt(exit.recieved_lots) < parseInt(exit.requested_exit_lots)) && (
                           <button
                             className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-xs transition-colors"
                             onClick={() => openModal(exit)}
@@ -170,15 +170,6 @@ const ManagerExitList = () => {
                             Update Fills
                           </button>
                         )}
-                        {/* You can add a button for approving pending exits if needed */}
-                        {/* {exit.exit_status === "pending" && (
-                          <button
-                            className="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1 rounded text-xs transition-colors"
-                            onClick={() => handleUpdateStatus(exit.id, 'approved')}
-                          >
-                            Approve
-                          </button>
-                        )} */}
                       </div>
                     </td>
                   </tr>

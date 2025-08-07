@@ -115,7 +115,7 @@ class NestedExitSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Exit
-        fields = ['requested_exit_lots', 'exit_price', 'recieved_lots', 'status_display', 'requested_at']
+        fields = ['id','requested_exit_lots', 'exit_price', 'recieved_lots', 'status_display', 'requested_at']
 
     def to_representation(self, instance):
         representation = super().to_representation(instance)

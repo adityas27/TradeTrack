@@ -10,7 +10,7 @@ const MyExitsList = () => {
   const fetchTradesWithExits = async () => {
     try {
       setLoading(true);
-      const res = await api.get('http:/127.0.0.1:8000/api/trades/exits/my/');
+      const res = await api.get('/trades/exits/my/');
       setTradesWithExits(res.data);
       setError(null);
     } catch (err) {
