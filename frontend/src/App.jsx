@@ -17,6 +17,7 @@ import TradesTable from "./components/TradeTable";
 import CreateExitForm from "./components/CreateExitForm";
 import ManagerExit from "./components/ManagerExit";
 import MyExitList from "./components/MyExitList";
+import Home from "./components/Home";
 
 function App() {
   return (
@@ -24,7 +25,8 @@ function App() {
       <Navbar />
       <div className="p-6">
         <Routes>
-          <Route path="/" element={<TradeList />} />
+          <Route path="/" element={<Home />} /> 
+          <Route path="/manager" element={<TradeList />} /> 
           <Route path="/profile" element={<Profile />} />
           <Route path="/profile/edit" element={<EditProfile />} />
           <Route path="/apply-trade" element={<TradeApply />} />
@@ -34,8 +36,6 @@ function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
           <Route path="/settlement" element={<TradesTable />} />
-
-          {/* New routes */}
           <Route path="/create-exit" element={<CreateExitForm />} />
           <Route path="/manager-exit" element={<ManagerExit />} />
           <Route path="/my-exits" element={<MyExitList />} />

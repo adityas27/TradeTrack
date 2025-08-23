@@ -2,6 +2,8 @@ from django.db import models
 from django.contrib.auth import get_user_model
 from decimal import Decimal
 from django.conf import settings
+from django.contrib.postgres.fields import JSONField
+from django.core.exceptions import ValidationError
 
 User = get_user_model()
 
@@ -35,54 +37,58 @@ class Availability(models.Model):
         return f"{self.commodity.code}-({start_info} - {end_info})"
 
 class Trade(models.Model):
-    TRADE_OPTIONS = [
-        ('long', 'Long'),
-        ('short', 'Short'),
-    ]
-
+    TRADE_OPTIONS = [('long', 'Long'), ('short', 'Short')]
     APPROVAL_STATUSES = [
-        ('pending', 'Pending'),
-        ('approved', 'Approved'),
-        ('order_placed', 'Order Placed'),
+        ('pending', 'Pending'), 
+        ('approved', 'Approved'), 
+        ('order_placed', 'Order Placed'), 
         ('fills_received', 'Fills Received'),
-        ('partial_fills_received', 'Partial Fills Received'),
+        ('partial_fills_received', 'Partial Fills Received')
     ]
-    name = models.ForeignKey(Availability, on_delete=models.CASCADE, related_name='trades')
+    # Details
+    name = models.ForeignKey("Availability", on_delete=models.CASCADE, related_name="trades")
     trade_type = models.CharField(max_length=10, choices=TRADE_OPTIONS)
-    lots = models.PositiveIntegerField()
-    price = models.DecimalField(max_digits=10, decimal_places=2)
-    stop_loss = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-
-    trader = models.ForeignKey(User, on_delete=models.CASCADE, related_name='trades')
-    status = models.CharField(max_length=25, choices=APPROVAL_STATUSES, default='pending')
-
-    approved_by = models.ForeignKey(
-        User, null=True, blank=True,
-        on_delete=models.SET_NULL,
-        related_name='approved_trades'
-    )
-
-    # Timestamp fields
-    created_at = models.DateTimeField(auto_now_add=True)       # Trade requested
-    approved_at = models.DateTimeField(null=True, blank=True)  # Approved
+    lots_and_price = models.JSONField(default=list)
+    # stop_loss = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    trader = models.ForeignKey(User, on_delete=models.CASCADE, related_name="trades")
+    status = models.CharField(max_length=25, choices=APPROVAL_STATUSES, default="pending")
+    approved_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="approved_trades")
+    created_at = models.DateTimeField(auto_now_add=True)
+    approved_at = models.DateTimeField(null=True, blank=True)
     order_placed_at = models.DateTimeField(null=True, blank=True)
     fills_received_at = models.DateTimeField(null=True, blank=True)
-    close_requested_at = models.DateTimeField(null=True, blank=True)  # When the trade was closed
-
-    # Additional fields 
-    is_closed = models.BooleanField(default=False)  # Indicates if the trade is closed
-    close_accepted = models.BooleanField(default=False)  # Indicates if the close request was accepted
-    ratio = models.DecimalField(max_digits=10, decimal_places=2, default=100.00) # Field for ratio
-    fills_recivied_for = models.DecimalField(max_digits=10, decimal_places=2, default=0.00) # Field for fills received (lots)
-    fills_received_of = models.DecimalField(max_digits=10, decimal_places=2, default=0.00) # Field for fills received of(price)   
+    close_requested_at = models.DateTimeField(null=True, blank=True)
+    is_closed = models.BooleanField(default=False)
+    close_accepted = models.BooleanField(default=False)
+    ratio = models.DecimalField(max_digits=10, decimal_places=2, default=100.00)
+    avg_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    total_lots = models.IntegerField(default=0)
 
     def __str__(self):
-        return f"{self.name}"
+        return f"Trade {self.id} - {self.name} ({self.trade_type})"
+
+    def clean(self):
+        if not isinstance(self.lots_and_price, list):
+            raise ValidationError("lots_and_price must be a list of dicts.")
+        for entry in self.lots_and_price:
+            required_keys = ["lots", "price", "added_at", "fills_received", "stop_loss"]
+            for key in required_keys:
+                if key not in entry:
+                    raise ValidationError(f"Each entry must include '{key}'.")
+            if not isinstance(entry["lots"], int) or entry["lots"] <= 0:
+                raise ValidationError("'lots' must be a positive integer.")
+            if not isinstance(entry["price"], (int, float)):
+                raise ValidationError("'price' must be numeric.")
+            if not isinstance(entry["fills_received"], int) or entry["fills_received"] < 0:
+                raise ValidationError("'fills_received' must be a non-negative integer.")
+            if not isinstance(entry["stop_loss"], (int, float)):
+                raise ValidationError("'stop_loss' must be numeric.")
+
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         
-        self._original_fills_recivied_for = self.fills_recivied_for
+        # self._original_fills_recivied_for = self.fills_recivied_for
 
 
 
@@ -100,7 +106,7 @@ class Exit(models.Model):
     trade = models.ForeignKey(
         Trade, 
         on_delete=models.CASCADE, 
-        related_name='exit_events',
+        related_name='exits',
         help_text="The trade associated with this exit event."
     )
     
@@ -180,3 +186,45 @@ class Exit(models.Model):
             f"Exit for Trade {self.trade.id} ({self.trade.name}) - "
             f"{self.requested_exit_lots} lots requested at {self.exit_price or 'N/A'}"
         )
+
+class FlyTrade(models.Model):
+    TRADE_OPTIONS = [
+        ('long', 'Long'),
+        ('short', 'Short'),
+    ]
+    leg1 = models.ForeignKey(Availability, on_delete=models.CASCADE, related_name='fly_trade_leg1')
+    leg2 = models.ForeignKey(Availability, on_delete=models.CASCADE, related_name='fly_trade_leg2')
+    total_lots = models.PositiveIntegerField()
+    trade_type = models.CharField(max_length=10, choices=TRADE_OPTIONS)
+    lots_leg1 = models.PositiveIntegerField()
+    lots_leg2 = models.PositiveIntegerField()
+    price_leg1 = models.DecimalField(max_digits=10, decimal_places=2)
+    price_leg2 = models.DecimalField(max_digits=10, decimal_places=2)
+    stop_loss_leg1 = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    stop_loss_leg2 = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    ratio = models.DecimalField(max_digits=10, decimal_places=2, default=100.00)  # Field for ratio
+
+    trader = models.ForeignKey(User, on_delete=models.CASCADE, related_name='fly_trades')
+    status = models.CharField(max_length=25, choices=Trade.APPROVAL_STATUSES, default='pending')
+
+    approved_by = models.ForeignKey(
+        User, null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name='approved_trades_flytrade'
+    )
+
+    # Timestamp fields
+    created_at = models.DateTimeField(auto_now_add=True)       # Trade requested
+    approved_at = models.DateTimeField(null=True, blank=True)  # Approved
+    order_placed_at = models.DateTimeField(null=True, blank=True)
+    fills_received_at = models.DateTimeField(null=True, blank=True)
+    close_requested_at = models.DateTimeField(null=True, blank=True)  # When the trade was closed
+
+    # Additional fields 
+    is_closed = models.BooleanField(default=False)  # Indicates if the trade is closed
+    close_accepted = models.BooleanField(default=False)  # Indicates if the close request was accepted
+    fills_recivied_for_leg1 = models.DecimalField(max_digits=10, decimal_places=2, default=0.00) # Field for fills received (lots)
+    fills_recivied_for_leg2 = models.DecimalField(max_digits=10, decimal_places=2, default=0.00) # Field for fills received (lots)
+
+    def __str__(self):
+        return f"Fly Trade: {self.leg1} and {self.leg2}, ratio: {self.ratio}"

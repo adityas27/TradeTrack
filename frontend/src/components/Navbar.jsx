@@ -20,10 +20,11 @@ export default function Navbar() {
   }, [location]);
 
   const navLinks = [
-    { to: '/', label: 'All Trades' },
-    { to: '/my-trades', label: 'My Trades' },
+    { to: '/manager', label: 'Manager Trades View' },
+    { to: '/my-trades', label: 'My Trades View' },
     { to: '/profile', label: 'Profile' },
-    { to: '/apply-trade', label: 'Add Trade' }
+    { to: '/apply-trade', label: 'Add Trade' },
+    { to: '/manager-exit', label: 'Manager Exit Management' },
   ];
 
   return (

@@ -1,6 +1,52 @@
-// ManagerExitList.jsx
 import React, { useEffect, useState } from "react";
 import api from '../api/api';
+
+const ExitUpdateModal = ({ exit, receivedLots, setReceivedLots, handleUpdateReceivedLots, onClose }) => {
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-40 flex justify-center items-center z-50">
+      <div className="bg-white p-6 rounded-lg shadow-lg w-96">
+        <h2 className="text-lg font-semibold mb-4">Update Fills</h2>
+        
+        <div className="bg-gray-50 p-3 rounded-lg mb-4">
+          <p className="text-sm text-gray-600">
+            <strong>Trade ID:</strong> {exit.trade_id}
+          </p>
+          <p className="text-sm text-gray-600">
+            <strong>Requested:</strong> {exit.requested_exit_lots}
+          </p>
+        </div>
+
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Received Lots</label>
+          <input
+            type="number"
+            min="0"
+            max={exit.requested_exit_lots}
+            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            value={receivedLots}
+            onChange={(e) => setReceivedLots(e.target.value)}
+          />
+        </div>
+        
+        <div className="flex justify-end gap-3">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 bg-gray-400 hover:bg-gray-500 text-white rounded transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleUpdateReceivedLots}
+            disabled={!receivedLots || parseInt(receivedLots) > exit.requested_exit_lots}
+            className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Update
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const ManagerExitList = () => {
   const [tradesWithExits, setTradesWithExits] = useState([]);
@@ -13,12 +59,10 @@ const ManagerExitList = () => {
   const fetchTradesWithExits = async () => {
     try {
       setLoading(true);
-      const res = await api.get('http://127.0.0.1:8000/api/trades/exits/all/');
+      const res = await api.get('trades/exits/all/');
       setTradesWithExits(res.data);
-      console.log(tradesWithExits)
       setError(null);
     } catch (err) {
-      console.error("Error fetching trades with exits:", err);
       setError("Failed to load exit requests. Please try again.");
     } finally {
       setLoading(false);
@@ -31,14 +75,12 @@ const ManagerExitList = () => {
 
   useEffect(() => {
     const socket = new WebSocket("ws://127.0.0.1:8000/ws/trades/");
-
     socket.onmessage = (e) => {
       const data = JSON.parse(e.data);
       if (data.type === "exit_update") {
-        fetchTradesWithExits(); // A full refresh is safer with the nested structure
+        fetchTradesWithExits();
       }
     };
-
     return () => socket.close();
   }, []);
 
@@ -47,12 +89,10 @@ const ManagerExitList = () => {
       const res = await api.patch(`trades/exits/${exitId}/update/`, {
         exit_status: newStatus
       });
-      
       if (res.status === 200) {
-        fetchTradesWithExits(); // Refresh data to reflect the change
+        fetchTradesWithExits();
       }
     } catch (err) {
-      console.error("Failed to update exit status:", err);
       setError("Failed to update exit status. Please try again.");
     }
   };
@@ -64,23 +104,20 @@ const ManagerExitList = () => {
   };
 
   const handleUpdateReceivedLots = async () => {
-    if (!receivedLots || receivedLots > selectedExit.requested_exit_lots) {
+    if (!receivedLots || parseInt(receivedLots) > selectedExit.requested_exit_lots) {
       setError("Received lots cannot exceed requested lots.");
       return;
     }
-console.log(selectedExit)
     try {
       const res = await api.patch(`trades/exits/${selectedExit.id}/update/`, {
         recieved_lots: parseInt(receivedLots),
         exit_status: parseInt(receivedLots) === selectedExit.requested_exit_lots ? "filled" : "partial_filled"
       });
-      
       if (res.status === 200) {
         setShowModal(false);
-        fetchTradesWithExits(); // Refresh data
+        fetchTradesWithExits();
       }
     } catch (err) {
-      console.error("Failed to update received lots:", err);
       setError("Failed to update received lots. Please try again.");
     }
   };
@@ -90,6 +127,8 @@ console.log(selectedExit)
       'order placed': 'bg-blue-100 text-blue-800',
       'fills recieved': 'bg-purple-100 text-purple-800',
       'partial fills recieved': 'bg-orange-100 text-orange-800',
+      'filled': 'bg-green-100 text-green-800',
+      'pending': 'bg-yellow-100 text-yellow-800',
     };
     return statusClasses[status] || 'bg-gray-100 text-gray-800';
   };
@@ -100,9 +139,9 @@ console.log(selectedExit)
 
   if (loading) {
     return (
-      <div className="p-6 max-w-5xl mx-auto">
+      <div className="p-8 font-sans bg-gray-50 min-h-screen flex justify-center items-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
           <p className="mt-4 text-gray-600">Loading exit requests...</p>
         </div>
       </div>
@@ -110,8 +149,8 @@ console.log(selectedExit)
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <h3 className="text-2xl font-bold text-gray-800 mb-6 text-center">📡 Manager Exit Dashboard</h3>
+    <div className="p-8 max-w-7xl mx-auto font-sans bg-gray-50 min-h-screen">
+      <h3 className="text-3xl font-bold text-gray-800 mb-6">📡 Manager Exit Dashboard</h3>
 
       {error && (
         <div className="mb-4 p-4 bg-red-100 text-red-700 rounded-lg">
@@ -126,8 +165,7 @@ console.log(selectedExit)
         </div>
       ) : (
         tradesWithExits.map((trade) => (
-          <div key={trade.id} className="bg-white shadow-lg rounded-lg mb-6 overflow-hidden">
-            {/* Header for the trade group */}
+          <div key={trade.id} className="bg-white shadow-lg rounded-xl mb-6 overflow-hidden border border-gray-200">
             <div className="p-4 bg-gray-100 flex items-center justify-between">
               <div>
                 <p className="text-lg font-bold">Trade ID: {trade.id}</p>
@@ -138,20 +176,19 @@ console.log(selectedExit)
               </span>
             </div>
 
-            {/* Table for nested exit requests */}
-            <table className="min-w-full divide-y divide-gray-200">
+            <table className="min-w-full table-fixed">
               <thead className="bg-white">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Requested</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Received</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Exit Price</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                  <th className="px-6 py-3 w-1/5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Requested</th>
+                  <th className="px-6 py-3 w-1/5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Received</th>
+                  <th className="px-6 py-3 w-1/5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Exit Price</th>
+                  <th className="px-6 py-3 w-1/5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                  <th className="px-6 py-3 w-1/5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {trade.applied_exits.map((exit) => (
-                  <tr key={exit.id} className="hover:bg-gray-50">
+                  <tr key={exit.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{exit.requested_exit_lots}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{exit.recieved_lots || 0}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{exit.exit_price ? `$${exit.exit_price}` : 'N/A'}</td>
@@ -162,13 +199,21 @@ console.log(selectedExit)
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <div className="flex space-x-2">
-                        {(exit.status_display === 'order placed' || parseInt(exit.recieved_lots) < parseInt(exit.requested_exit_lots)) && (
-                          <button
-                            className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-xs transition-colors"
-                            onClick={() => openModal(exit)}
-                          >
-                            Update Fills
-                          </button>
+                        {(exit.exit_status === 'pending') && (
+                            <button
+                                onClick={() => handleUpdateStatus(exit.id, 'order_placed')}
+                                className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded-md text-xs transition-colors"
+                            >
+                                Approve Order
+                            </button>
+                        )}
+                        {(exit.status_display === 'order placed' || exit.status_display === 'partial fills recieved') && (
+                            <button
+                                onClick={() => openModal(exit)}
+                                className="bg-blue-100 hover:bg-blue-700 hover:text-white text-blue-500  px-4 py-2 rounded-md text-xs transition-colors"
+                            >
+                                <strong>Update Fills</strong>
+                            </button>
                         )}
                       </div>
                     </td>
@@ -180,50 +225,14 @@ console.log(selectedExit)
         ))
       )}
 
-      {/* Modal for updating received lots */}
       {showModal && selectedExit && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 flex justify-center items-center z-50">
-          <div className="bg-white p-6 rounded-lg shadow-lg w-96">
-            <h2 className="text-lg font-semibold mb-4">Update Fills</h2>
-            
-            <div className="bg-gray-50 p-3 rounded-lg mb-4">
-              <p className="text-sm text-gray-600">
-                <strong>Trade ID:</strong> {selectedExit.trade_id}
-              </p>
-              <p className="text-sm text-gray-600">
-                <strong>Requested:</strong> {selectedExit.requested_exit_lots}
-              </p>
-            </div>
-
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Received Lots</label>
-              <input
-                type="number"
-                min="0"
-                max={selectedExit.requested_exit_lots}
-                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                value={receivedLots}
-                onChange={(e) => setReceivedLots(e.target.value)}
-              />
-            </div>
-            
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setShowModal(false)}
-                className="px-4 py-2 bg-gray-400 hover:bg-gray-500 text-white rounded transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleUpdateReceivedLots}
-                disabled={!receivedLots || parseInt(receivedLots) > selectedExit.requested_exit_lots}
-                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Update
-              </button>
-            </div>
-          </div>
-        </div>
+        <ExitUpdateModal
+          exit={selectedExit}
+          receivedLots={receivedLots}
+          setReceivedLots={setReceivedLots}
+          handleUpdateReceivedLots={handleUpdateReceivedLots}
+          onClose={() => setShowModal(false)}
+        />
       )}
     </div>
   );
