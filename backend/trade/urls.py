@@ -1,7 +1,7 @@
 from django.urls import path
 from .views import (create_trade, ManagerTradeListView, UserTradeListView, update_trade_status, update_trade_fills, get_availabilities, update_close, my_trades,
                     pending_close_requests, accept_close, closed_trades,
-                    create_exit, update_exit_status, my_exit_requests, all_exit_requests, add_lots_to_trade)
+                    create_exit, update_exit_status, my_exit_requests, all_exit_requests, add_lots_to_trade, exit_request_detail)
 
 urlpatterns = [
     path('apply/', create_trade, name='apply-trade'), # working fine one 2308
@@ -20,4 +20,5 @@ urlpatterns = [
     path('exits/my/', my_exit_requests, name='my-exits'),
     path('exits/all/', all_exit_requests, name='all-exits'),
     path('trade/<int:trade_id>/add-lots/', add_lots_to_trade, name='add_lots_to_trade'),
+    path('exits/my/<int:id>/', exit_request_detail, name='exit_request_detail'),
 ]

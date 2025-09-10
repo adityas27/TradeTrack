@@ -19,6 +19,7 @@ from .serializers import (
     ExitSerializer,
     NestedExitSerializer,
     TradeWithExitsSerializer,
+    TradeExitDetailSerializer
 )
 
 
@@ -344,6 +345,18 @@ def my_exit_requests(request):
 
     serializer = TradeWithExitsSerializer(trades, many=True)
     return Response(serializer.data)
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def exit_request_detail(request, id):
+    trade = Trade.objects.get(id=id)
+    exits = Exit.objects.filter(trade=trade)
+    print(exits)
+    if trade.trader == request.user:
+        serializer = TradeExitDetailSerializer(exits, many=True)
+        return Response(serializer.data)
+    else:
+        return Response({'error':'Request is forbidden as the wrong user is requesting the resources'},status=status.HTTP_403_FORBIDDEN)
 
 
 @api_view(['GET'])

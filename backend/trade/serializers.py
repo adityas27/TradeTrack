@@ -213,3 +213,8 @@ class TradeWithExitsSerializer(serializers.ModelSerializer):
         recieved_lots = obj.exits.aggregate(total_recieved_lots=Sum('recieved_lots'))['total_recieved_lots'] or 0
         total_lots = obj.total_lots or 0
         return f"{recieved_lots}/{total_lots}"
+
+class TradeExitDetailSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Exit
+        fields = "__all__"

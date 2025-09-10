@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     # our apps
     'trade.apps.TradeConfig', 
     'accounts',
+    'flytrade.apps.FlytradeConfig'
 
 ]
 
