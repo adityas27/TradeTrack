@@ -58,7 +58,7 @@ const TradeDetailsModal = ({ isOpen, onClose, trade }) => {
         setErrorExits(null);
         // Adjust to your actual exits endpoint for a single trade:
         // e.g., GET /api/trades/{id}/exits/
-        const res = await api.get(`trades/exits/my`);
+        const res = await api.get(`trades/exits/my/${trade.id}`);
         setExits(res.data || []);
         console.log(res.data)
       } catch (err) {
@@ -201,7 +201,7 @@ const TradeDetailsModal = ({ isOpen, onClose, trade }) => {
                       "Requested Lots",
                       "Exit Price",
                       "Status",
-                      "Initiated By",
+                      "P/L",
                       "Created",
                     ].map((h) => (
                       <th
@@ -231,14 +231,14 @@ const TradeDetailsModal = ({ isOpen, onClose, trade }) => {
                         </td>
                         <td className="px-3 py-2 text-sm">
                           <span className="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-800">
-                            {(x.status || "").replaceAll("_", " ").toUpperCase()}
+                            {(x.exit_status || "").replaceAll("_", " ").toUpperCase()}
                           </span>
                         </td>
                         <td className="px-3 py-2 text-sm text-gray-900">
-                          {x.exit_initiated_by_username || x.initiated_by || "—"}
+                           {"$"}{parseFloat(x.profit_loss) + parseFloat(trade.avg_price)}
                         </td>
                         <td className="px-3 py-2 text-sm text-gray-500">
-                          {formatDate(x.created_at)}
+                          {formatDate(x.requested_at)}
                         </td>
                       </tr>
                     ))

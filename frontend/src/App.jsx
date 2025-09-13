@@ -18,6 +18,10 @@ import CreateExitForm from "./components/CreateExitForm";
 import ManagerExit from "./components/ManagerExit";
 import MyExitList from "./components/MyExitList";
 import Home from "./components/Home";
+import FlyTradeList from "./components/FlyTrade/FlyTradeList";
+import CreateFlyTrade from "./components/FlyTrade/CreateFlyTrade";
+import FlyTradeExits from "./components/FlyTrade/FlyTradeExits";
+import MyFlyTrades from "./components/FlyTrade/MyFlyTrades";
 
 function App() {
   return (
@@ -39,6 +43,12 @@ function App() {
           <Route path="/create-exit" element={<CreateExitForm />} />
           <Route path="/manager-exit" element={<ManagerExit />} />
           <Route path="/my-exits" element={<MyExitList />} />
+
+          {/* FlyTrade Routes */}
+          <Route path="/fly/manager" element={<FlyTradeList />} />
+          <Route path="/fly/create" element={<CreateFlyTrade />} />
+          <Route path="/fly/exits" element={<FlyTradeExits />} />
+          <Route path="/fly/my" element={<MyFlyTrades />} />
 
           <Route path="*" element={<NotFound />} />
         </Routes>
