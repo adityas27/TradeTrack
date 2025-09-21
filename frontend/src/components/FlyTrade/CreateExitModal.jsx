@@ -264,8 +264,7 @@ const CreateExitModal = ({ spread, onClose, onSuccess }) => {
           <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
             <h5 className="font-medium text-amber-800 mb-2">Notes:</h5>
             <ul className="text-sm text-amber-700 space-y-1">
-              <li>• Exit requests will be sent to the manager for approval</li>
-              <li>• Exit price is optional - leave blank for market price</li>
+              <li>• Exit requests will be sent to the manager for approval</li> 
               <li>• You can create multiple exit requests with different prices</li>
               <li>• Total requested lots cannot exceed available filled lots</li>
             </ul>

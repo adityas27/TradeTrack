@@ -29,6 +29,9 @@ function App() {
       <Navbar />
       <div className="p-6">
         <Routes>
+          {/* Auth Routes */}
+          <Route path="/login" element={<Login />} />
+          <Route path="/signup" element={<Signup />} />
           <Route path="/" element={<Home />} /> 
           <Route path="/manager" element={<TradeList />} /> 
           <Route path="/profile" element={<Profile />} />
@@ -37,8 +40,6 @@ function App() {
           <Route path="/my-trades" element={<MyTrades />} />
           <Route path="/closed" element={<ClosedTrades />} />
           <Route path="/close_req" element={<CloseRequests />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/signup" element={<Signup />} />
           <Route path="/settlement" element={<TradesTable />} />
           <Route path="/create-exit" element={<CreateExitForm />} />
           <Route path="/manager-exit" element={<ManagerExit />} />

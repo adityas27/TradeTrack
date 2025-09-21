@@ -53,6 +53,10 @@ def update_exit_on_save(sender, instance: Exit, created, **kwargs):
     if instance.exit_price is not None and instance.recieved_lots is not None and instance.recieved_lots > 0:
         trade_entry_price = Decimal(instance.trade.avg_price)
         calculated_pl = (Decimal(instance.exit_price) - trade_entry_price) * Decimal(instance.recieved_lots)
+        print(instance.exit_price)
+        print(trade_entry_price)
+        print(instance.recieved_lots)
+        print(calculated_pl)
         if instance.profit_loss != calculated_pl:
             instance.profit_loss = calculated_pl
             fields_to_update.append("profit_loss")

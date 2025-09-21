@@ -55,6 +55,7 @@ def notify_exit_update(exit_obj: Exit):
 @permission_classes([permissions.IsAuthenticated])
 def create_trade(request):
     serializer = TradeSerializer(data=request.data, context={'request': request})
+    print(serializer)
     if serializer.is_valid():
         trade = serializer.save(trader=request.user, status='pending')
         notify_trade_update(trade)

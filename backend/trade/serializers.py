@@ -116,6 +116,10 @@ class TradeSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(f"Entry {idx}: 'stop_loss' must be numeric.")
         return value
 
+    # def validate_stop_loss(self, stop, kind, entry):
+    #     if kind == "long" and stop>entry:
+    #         pass
+
     def create(self, validated_data):
         validated_data['trader'] = self.context['request'].user
         return super().create(validated_data)

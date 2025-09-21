@@ -84,7 +84,15 @@ class Trade(models.Model):
             if not isinstance(entry["stop_loss"], (int, float)):
                 raise ValidationError("'stop_loss' must be numeric.")
 
-    
+        # 🔹 Trade type specific validation
+        price = entry["price"]
+        stop_loss = entry["stop_loss"]
+
+        if self.trade_type == "long" and stop_loss >= price:
+            raise ValidationError("For LONG trades, stop_loss must be lower than entry price.")
+        if self.trade_type == "short" and stop_loss <= price:
+            raise ValidationError("For SHORT trades, stop_loss must be higher than entry price.")
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         
