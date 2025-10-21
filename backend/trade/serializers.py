@@ -102,23 +102,77 @@ class TradeSerializer(serializers.ModelSerializer):
     def validate_lots_and_price(self, value):
         if not isinstance(value, list):
             raise serializers.ValidationError("lots_and_price must be a list of dicts.")
+        
         for idx, entry in enumerate(value):
-            for key in ["lots", "price", "added_at", "fills_received", "stop_loss"]:
+            # Check all required keys exist
+            required_keys = ["lots", "price", "added_at", "fills_received", "stop_loss"]
+            for key in required_keys:
                 if key not in entry:
                     raise serializers.ValidationError(f"Entry {idx}: missing '{key}'.")
+            
+            # Validate lots (must be positive integer)
             if not isinstance(entry["lots"], int) or entry["lots"] <= 0:
-                raise serializers.ValidationError(f"Entry {idx}: 'lots' must be positive int.")
-            if not isinstance(entry["price"], (int, float)):
-                raise serializers.ValidationError(f"Entry {idx}: 'price' must be numeric.")
-            if not isinstance(entry["fills_received"], int) or entry["fills_received"] < 0:
-                raise serializers.ValidationError(f"Entry {idx}: 'fills_received' must be non-negative int.")
-            if not isinstance(entry["stop_loss"], (int, float)):
-                raise serializers.ValidationError(f"Entry {idx}: 'stop_loss' must be numeric.")
+                raise serializers.ValidationError(f"Entry {idx}: 'lots' must be positive integer.")
+            
+            # Validate price (must be numeric)
+            if not isinstance(entry["price"], (int, float)) or entry["price"] < 0:
+                raise serializers.ValidationError(f"Entry {idx}: 'price' must be non-negative numeric.")
+            
+            # Validate added_at (must be ISO datetime string)
+            if not isinstance(entry["added_at"], str):
+                raise serializers.ValidationError(f"Entry {idx}: 'added_at' must be ISO datetime string.")
+            try:
+                # Validate ISO format
+                from datetime import datetime
+                datetime.fromisoformat(entry["added_at"].replace('Z', '+00:00'))
+            except ValueError:
+                raise serializers.ValidationError(f"Entry {idx}: 'added_at' must be valid ISO datetime.")
+            
+            # Validate fills_received (must be list of dicts)
+            if not isinstance(entry["fills_received"], list):
+                raise serializers.ValidationError(f"Entry {idx}: 'fills_received' must be a list.")
+            
+            # Validate each fill in fills_received
+            total_filled_lots = 0
+            for fill_idx, fill in enumerate(entry["fills_received"]):
+                if not isinstance(fill, dict):
+                    raise serializers.ValidationError(
+                        f"Entry {idx}, Fill {fill_idx}: each fill must be a dict with 'lots' and 'price'."
+                    )
+                
+                # Check fill has required keys
+                if "lots" not in fill or "price" not in fill:
+                    raise serializers.ValidationError(
+                        f"Entry {idx}, Fill {fill_idx}: fill must have 'lots' and 'price' keys."
+                    )
+                
+                # Validate fill lots
+                if not isinstance(fill["lots"], (int, float)) or fill["lots"] < 0:
+                    raise serializers.ValidationError(
+                        f"Entry {idx}, Fill {fill_idx}: fill 'lots' must be non-negative numeric."
+                    )
+                
+                # Validate fill price
+                if not isinstance(fill["price"], (int, float)) or fill["price"] < 0:
+                    raise serializers.ValidationError(
+                        f"Entry {idx}, Fill {fill_idx}: fill 'price' must be non-negative numeric."
+                    )
+                
+                total_filled_lots += fill["lots"]
+            
+            # Business logic: total filled lots cannot exceed requested lots
+            if total_filled_lots > entry["lots"]:
+                raise serializers.ValidationError(
+                    f"Entry {idx}: total filled lots ({total_filled_lots}) cannot exceed requested lots ({entry['lots']})."
+                )
+            
+            # Validate stop_loss (must be numeric)
+            if not isinstance(entry["stop_loss"], (int, float)) or entry["stop_loss"] < 0:
+                raise serializers.ValidationError(f"Entry {idx}: 'stop_loss' must be non-negative numeric.")
+        
         return value
 
-    # def validate_stop_loss(self, stop, kind, entry):
-    #     if kind == "long" and stop>entry:
-    #         pass
+
 
     def create(self, validated_data):
         validated_data['trader'] = self.context['request'].user

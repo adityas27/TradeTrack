@@ -2,10 +2,10 @@ import React, { useEffect, useMemo, useState } from "react";
 import api from "../api/api";
 
 const newLeg = () => ({
-  lots: 0,
+  lots: 1, // Changed from 0 to 1 (positive validation requirement)
   price: 0,
   stop_loss: 0,
-  fills_received: 0,
+  fills_received: [], // Changed from 0 to empty array
   added_at: new Date().toISOString(),
 });
 
@@ -14,7 +14,6 @@ const AddLotsModal = ({ trade, isOpen, onClose, onSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Typography tweak only (UI unchanged otherwise)
   const containerClass =
     "bg-white rounded-lg shadow-xl w-full max-w-2xl p-6 relative transform transition-all duration-300 scale-100 font-[Inter] tracking-tight";
 
@@ -56,10 +55,24 @@ const AddLotsModal = ({ trade, isOpen, onClose, onSuccess }) => {
         return `Row ${i + 1}: lots must be a positive number.`;
       if (!Number.isFinite(Number(l.price)) || Number(l.price) <= 0)
         return `Row ${i + 1}: price must be a positive number.`;
-      if (!Number.isFinite(Number(l.fills_received)))
-        return `Row ${i + 1}: fills_received must be a number.`;
+      // Fixed validation for fills_received as array
+      if (!Array.isArray(l.fills_received))
+        return `Row ${i + 1}: fills_received must be an array.`;
       if (!Number.isFinite(Number(l.stop_loss)))
         return `Row ${i + 1}: stop_loss must be a number (0 allowed).`;
+      // Validate stop-loss vs entry depending on trade direction
+      const entryPrice = Number(l.price);
+      const stop = Number(l.stop_loss);
+      const direction = trade?.trade_type || "long"; // default to long
+      if (direction === "long") {
+        // For long, stop must be strictly less than entry
+        if (!(stop < entryPrice))
+          return `Row ${i + 1}: for a LONG trade stop-loss must be less than entry price.`;
+      } else if (direction === "short") {
+        // For short, stop must be strictly greater than entry
+        if (!(stop > entryPrice))
+          return `Row ${i + 1}: for a SHORT trade stop-loss must be greater than entry price.`;
+      }
     }
     return null;
   };
@@ -78,9 +91,6 @@ const AddLotsModal = ({ trade, isOpen, onClose, onSuccess }) => {
     setError(null);
 
     try {
-      // If your endpoint expects to APPEND only the new legs:
-      // const payload = { lots_and_price: legs };
-
       // If your endpoint expects to REPLACE entire lots_and_price:
       // merge existing server legs with new legs (append semantics on client)
       const existing = Array.isArray(trade.lots_and_price)
@@ -88,18 +98,19 @@ const AddLotsModal = ({ trade, isOpen, onClose, onSuccess }) => {
             lots: Number(x.lots) || 0,
             price: Number(x.price) || 0,
             stop_loss: Number(x.stop_loss) || 0,
-            fills_received: Number(x.fills_received) || 0,
+            fills_received: Array.isArray(x.fills_received) ? x.fills_received : [], // Ensure array
             added_at:
               x.added_at && x.added_at !== "time"
                 ? x.added_at
                 : new Date().toISOString(),
           }))
         : [];
+      
       const merged = [...existing, ...legs.map((l) => ({
         lots: Number(l.lots) || 0,
         price: Number(l.price) || 0,
         stop_loss: Number(l.stop_loss) || 0,
-        fills_received: Number(l.fills_received) || 0,
+        fills_received: Array.isArray(l.fills_received) ? l.fills_received : [], // Keep as array
         added_at: l.added_at,
       }))];
 
@@ -120,6 +131,7 @@ const AddLotsModal = ({ trade, isOpen, onClose, onSuccess }) => {
       const errorMessage =
         err?.response?.data?.detail ||
         err?.response?.data?.message ||
+        JSON.stringify(err?.response?.data) ||
         "Failed to add lots. Please try again.";
       setError(errorMessage);
     } finally {
@@ -150,7 +162,14 @@ const AddLotsModal = ({ trade, isOpen, onClose, onSuccess }) => {
                 ? trade.total_lots
                 : Array.isArray(trade.lots_and_price)
                 ? trade.lots_and_price.reduce(
-                    (a, x) => a + (Number(x.lots) || 0),
+                    (a, x) => {
+                      // Calculate total from fills_received arrays
+                      if (Array.isArray(x.fills_received)) {
+                        return a + x.fills_received.reduce((sum, fill) => 
+                          sum + (Number(fill.lots) || 0), 0);
+                      }
+                      return a + (Number(x.lots) || 0);
+                    },
                     0
                   )
                 : Number(trade.lots) || 0}
@@ -170,7 +189,7 @@ const AddLotsModal = ({ trade, isOpen, onClose, onSuccess }) => {
         </div>
 
         {error && (
-          <div className="bg-red-100 text-red-700 text-sm p-3 rounded mb-4">
+          <div className="bg-red-100 text-red-700 text-sm p-3 rounded mb-4 whitespace-pre-wrap">
             {error}
           </div>
         )}
@@ -185,7 +204,7 @@ const AddLotsModal = ({ trade, isOpen, onClose, onSuccess }) => {
               >
                 <div className="col-span-1">
                   <label className="block text-xs font-medium text-gray-700 mb-1">
-                    Lots
+                    Lots *
                   </label>
                   <input
                     type="number"
@@ -193,7 +212,7 @@ const AddLotsModal = ({ trade, isOpen, onClose, onSuccess }) => {
                     value={leg.lots}
                     onChange={(e) =>
                       updateLeg(idx, {
-                        lots: parseInt(e.target.value || "0", 10),
+                        lots: parseInt(e.target.value || "1", 10),
                       })
                     }
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 transition-colors text-sm"
@@ -203,11 +222,12 @@ const AddLotsModal = ({ trade, isOpen, onClose, onSuccess }) => {
 
                 <div className="col-span-1">
                   <label className="block text-xs font-medium text-gray-700 mb-1">
-                    Price
+                    Price *
                   </label>
                   <input
                     type="number"
                     step="0.01"
+                    min="0.01"
                     value={leg.price}
                     onChange={(e) =>
                       updateLeg(idx, {
@@ -226,6 +246,7 @@ const AddLotsModal = ({ trade, isOpen, onClose, onSuccess }) => {
                   <input
                     type="number"
                     step="0.01"
+                    min="0"
                     value={leg.stop_loss}
                     onChange={(e) =>
                       updateLeg(idx, {
@@ -256,24 +277,17 @@ const AddLotsModal = ({ trade, isOpen, onClose, onSuccess }) => {
                   />
                 </div>
 
-                <div className="col-span-1">
-                  <label className="block text-xs font-medium text-gray-700 mb-1">
-                    Fills Recv
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={leg.fills_received}
-                    onChange={(e) =>
-                      updateLeg(idx, {
-                        fills_received: parseInt(e.target.value || "0", 10),
-                      })
-                    }
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 transition-colors text-sm"
-                  />
+                <div className="col-span-1 flex justify-end items-end">
+                  {legs.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => removeRow(idx)}
+                      className="text-xs bg-red-200 hover:bg-red-300 text-red-800 px-2 py-2 rounded"
+                    >
+                      Remove
+                    </button>
+                  )}
                 </div>
-
-                
               </div>
             ))}
 

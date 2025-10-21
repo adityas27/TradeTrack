@@ -90,15 +90,29 @@ const TradeApply = () => {
     setLoading(true);
     const now = new Date();
     try {
+      // Validation: ensure numeric values and stop-loss relation to entry
+      const lots = Number(form.lots);
+      const price = Number(form.price);
+      const stopLoss = Number(form.stop_loss);
+      if (!Number.isFinite(lots) || lots <= 0) throw new Error("Lots must be a positive number.");
+      if (!Number.isFinite(price) || price <= 0) throw new Error("Price must be a positive number.");
+      // Default stopLoss to 0 if empty, but validate relation when provided
+      if (!Number.isFinite(stopLoss)) throw new Error("Stop loss must be a number (enter 0 if not used).");
+      if (form.trade_type === "long") {
+        if (!(stopLoss < price)) throw new Error("For a LONG trade, stop-loss must be less than entry price.");
+      } else if (form.trade_type === "short") {
+        if (!(stopLoss > price)) throw new Error("For a SHORT trade, stop-loss must be greater than entry price.");
+      }
+
       const payload = {
         name: form.name,
         trade_type: form.trade_type,
         lots_and_price: [{
-          lots: parseInt(form.lots),
-          price: parseFloat(form.price),
-          stop_loss: 2,
-          added_at: now,
-          fills_received: 0,
+          lots: parseInt(lots),
+          price: parseFloat(price),
+          stop_loss: stopLoss,
+          added_at: now.toISOString(),
+          fills_received: [],
         }],
       };
       const res = await api.post("trades/apply/", payload);
@@ -108,15 +122,31 @@ const TradeApply = () => {
         setForm({ name: "", trade_type: "long", lots: "", price: "", stop_loss: "" });
         setSearchParams({ code: "", start_month: "", end_month: "", start_year: "2025", end_year: "2025" });
         setSelectedAvailability(null);
+        setTimeout(() => {
+          setMessage(null);
+          setMessageType(null);
+        }, 6000);
       }
     } catch (error) {
       console.error("Submission error:", error);
-      const errorMessage =
-        error.response?.data?.detail ||
-        error.response?.data?.message ||
-        "Failed to create trade. Please try again.";
+      let errorMessage = "Failed to create trade. Please try again.";
+      if (error.response?.data) {
+        const data = error.response.data;
+        if (typeof data.detail === 'string') errorMessage = data.detail;
+        else if (typeof data.message === 'string') errorMessage = data.message;
+        else if (typeof data === 'string') errorMessage = data;
+        else if (typeof data === 'object') {
+          errorMessage = Object.entries(data)
+            .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
+            .join(' | ');
+        }
+      }
       setMessage(errorMessage);
       setMessageType("error");
+      setTimeout(() => {
+        setMessage(null);
+        setMessageType(null);
+      }, 10000);
     } finally {
       setLoading(false);
     }
@@ -256,6 +286,12 @@ const TradeApply = () => {
             )}
           </div>
         </div>
+
+        {message && (
+          <div className={`p-4 rounded ${messageType === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+            {message}
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="bg-white p-8 rounded-xl border border-gray-300 space-y-6">
           <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">

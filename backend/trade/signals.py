@@ -5,26 +5,38 @@ from decimal import Decimal
 from .models import Trade, Exit
 
 
+from decimal import Decimal
+from django.db.models.signals import pre_save
+from django.dispatch import receiver
+
 @receiver(pre_save, sender=Trade)
 def update_trade_stats(sender, instance: Trade, **kwargs):
     """
     Compute:
-      - total_lots = sum of fills_received across entries
-      - avg_price = weighted by fills_received and price
-    If there are no fills, avg_price=0.
+      - total_lots = sum of fills_received lots across all entries
+      - avg_price = weighted average by fills_received lots and their prices
+    If there are no fills, avg_price=0 and total_lots=0.
     """
     entries = instance.lots_and_price or []
     total_fills = 0
     weighted_sum = Decimal('0')
 
     for entry in entries:
-        fills = int(entry.get("fills_received", 0) or 0)
-        price = Decimal(str(entry.get("price", 0) or 0))
-        total_fills += fills
-        weighted_sum += Decimal(fills) * price
+        # fills_received is now a list of {lots: X, price: Y} objects
+        fills_received = entry.get("fills_received", [])
+        
+        if isinstance(fills_received, list):
+            for fill in fills_received:
+                if isinstance(fill, dict):
+                    fill_lots = int(fill.get("lots", 0) or 0)
+                    fill_price = Decimal(str(fill.get("price", 0) or 0))
+                    
+                    total_fills += fill_lots
+                    weighted_sum += Decimal(fill_lots) * fill_price
 
     instance.total_lots = int(total_fills)
     instance.avg_price = (weighted_sum / Decimal(total_fills)) if total_fills > 0 else Decimal('0')
+
 
 
 @receiver(post_save, sender=Trade)

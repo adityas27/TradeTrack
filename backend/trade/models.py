@@ -87,7 +87,7 @@ class Trade(models.Model):
         # 🔹 Trade type specific validation
         price = entry["price"]
         stop_loss = entry["stop_loss"]
-
+        print(price, stop_loss, self.trade_type)
         if self.trade_type == "long" and stop_loss >= price:
             raise ValidationError("For LONG trades, stop_loss must be lower than entry price.")
         if self.trade_type == "short" and stop_loss <= price:

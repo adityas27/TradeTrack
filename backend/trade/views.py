@@ -55,7 +55,6 @@ def notify_exit_update(exit_obj: Exit):
 @permission_classes([permissions.IsAuthenticated])
 def create_trade(request):
     serializer = TradeSerializer(data=request.data, context={'request': request})
-    print(serializer)
     if serializer.is_valid():
         trade = serializer.save(trader=request.user, status='pending')
         notify_trade_update(trade)
@@ -167,12 +166,26 @@ def update_trade_fills(request, trade_id):
 
     # If order placed, update status based on fills
     if trade.status in ['order_placed', 'partial_fills_received']:
-        # Determine intended lots vs received: total_lots currently equals sum of fills_received
-        total_requested_lots = sum(int(entry.get('lots', 0) or 0) for entry in new_entries)
-        total_received_lots = trade.total_lots or 0
+        total_requested_lots = sum(
+            int(entry.get('lots', 0) or 0) 
+            for entry in new_entries
+        )
+        
+        # Calculate total received lots (sum of lots from fills_received arrays)
+        total_received_lots = 0
+        for entry in new_entries:
+            fills_received = entry.get('fills_received', [])
+            if isinstance(fills_received, list):
+                entry_received_lots = sum(
+                    int(fill.get('lots', 0) or 0) 
+                    for fill in fills_received 
+                    if isinstance(fill, dict)
+                )
+                total_received_lots += entry_received_lots
 
+        # Update status based on received vs requested lots
         if total_received_lots == 0:
-            # keep status as order_placed
+            # Keep status as order_placed
             pass
         elif 0 < total_received_lots < total_requested_lots:
             trade.status = 'partial_fills_received'
@@ -182,10 +195,12 @@ def update_trade_fills(request, trade_id):
             trade.status = 'fills_received'
             if trade.fills_received_at is None:
                 trade.fills_received_at = timezone.now()
+        
         trade.save()
 
     notify_trade_update(trade)
     return Response(TradeSerializer(trade).data)
+
 
 
 @api_view(['GET'])
@@ -352,7 +367,6 @@ def my_exit_requests(request):
 def exit_request_detail(request, id):
     trade = Trade.objects.get(id=id)
     exits = Exit.objects.filter(trade=trade)
-    print(exits)
     if trade.trader == request.user:
         serializer = TradeExitDetailSerializer(exits, many=True)
         return Response(serializer.data)
@@ -364,11 +378,11 @@ def exit_request_detail(request, id):
 @permission_classes([permissions.IsAdminUser])
 def all_exit_requests(request):
     trades = Trade.objects.filter(
-        is_closed=False
+        is_closed=False, exits__isnull=False
     ).prefetch_related(
         Prefetch('exits', queryset=Exit.objects.order_by('-requested_at'))
-    ).order_by('-created_at')
-
+    ).distinct().order_by('-created_at')
+    
     serializer = TradeWithExitsSerializer(trades, many=True)
     return Response(serializer.data)
 
@@ -432,9 +446,7 @@ def add_lots_to_trade(request, trade_id):
     payload = request.data or {}
     required = ['lots', 'price', 'added_at', 'fills_received', 'stop_loss']
     for entry in payload["lots_and_price"]:
-        print(entry)
         for key in required:
-            print(key)
             if key not in entry:
                 return Response({"error": f"{key} is required."}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -445,6 +457,8 @@ def add_lots_to_trade(request, trade_id):
         return Response(s.errors, status=status.HTTP_400_BAD_REQUEST)
 
     trade.lots_and_price = new_list
+    if trade.status == "fills_received":
+        trade.status = "partial_fills_received"
     trade.save()
     notify_trade_update(trade)
     return Response(TradeSerializer(trade).data, status=status.HTTP_200_OK)

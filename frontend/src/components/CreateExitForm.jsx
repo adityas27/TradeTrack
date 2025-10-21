@@ -10,34 +10,56 @@ const CreateExitModal = ({ isOpen, onClose, trade, onSuccess }) => {
   const [rows, setRows] = useState([newRow()]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [existingExits, setExistingExits] = useState([]);
+  const [exitsLoading, setExitsLoading] = useState(false);
 
-  // derive available lots from API shape you’re using elsewhere
-  const availableLots = useMemo(() => {
-    const totalLots =
-      typeof trade?.total_lots === "number"
-        ? trade.total_lots
-        : Array.isArray(trade?.lots_and_price)
-        ? trade.lots_and_price.reduce((a, x) => a + (Number(x.lots) || 0), 0)
-        : Number(trade?.lots) || 0;
+  // Calculate available lots with proper frontend validation
+  const { availableLots, totalExitedLots, totalPendingLots, totalRequestedLots } = useMemo(() => {
+    const totalLots = trade?.total_lots || 0;
+    
+    // Actually received/filled exit lots
+    const received = existingExits.reduce((sum, exit) => sum + (exit.recieved_lots || 0), 0);
+    
+    // Requested lots from pending/approved exits (for validation purposes)
+    const pendingStatuses = ['pending', 'approved', 'order_placed', 'partial_filled'];
+    const pending = existingExits
+      .filter(exit => pendingStatuses.includes(exit.exit_status))
+      .reduce((sum, exit) => sum + (exit.requested_exit_lots || 0), 0);
+    
+    // Total requested includes both received and pending
+    const totalRequested = existingExits.reduce((sum, exit) => sum + (exit.requested_exit_lots || 0), 0);
+    
+    // Available = total - all requested lots (not just received)
+    const available = Math.max(0, totalLots - totalRequested);
+    
+    return {
+      availableLots: available,
+      totalExitedLots: received,          // Actually received
+      totalPendingLots: pending,         // Pending but not yet received
+      totalRequestedLots: totalRequested // All requested (received + pending)
+    };
+  }, [trade, existingExits]);
 
-    const filledLots =
-      Array.isArray(trade?.lots_and_price)
-        ? trade.lots_and_price.reduce(
-            (a, x) => a + (Number(x.fills_received) || 0),
-            0
-          )
-        : Number(trade?.fills_recivied_for) || 0;
-
-    // If exits should be from filled or from outstanding, adjust here.
-    // Using "available to exit" = filledLots for safety; change if your business rule differs.
-    return Math.max(0, Number(filledLots));
-  }, [trade]);
-
+  // Fetch existing exits when modal opens
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || !trade?.id) return;
+    
     setError(null);
     setRows([newRow()]);
-  }, [isOpen]);
+    setExitsLoading(true);
+    
+    api.get(`trades/exits/my/${trade.id}/`)
+      .then(response => {
+        setExistingExits(response.data || []);
+      })
+      .catch(err => {
+        console.error("Failed to fetch exits:", err);
+        setExistingExits([]);
+      })
+      .finally(() => {
+        setExitsLoading(false);
+      });
+  }, [isOpen, trade?.id]);
 
   const totalRequested = useMemo(
     () =>
@@ -66,7 +88,7 @@ const CreateExitModal = ({ isOpen, onClose, trade, onSuccess }) => {
         return `Row ${i + 1}: exit price must be a positive number.`;
     }
     if (totalRequested > availableLots) {
-      return `Total requested lots (${totalRequested}) exceed available lots (${availableLots}).`;
+      return `Total requested lots (${totalRequested}) exceed available lots (${availableLots}).\n\nBreakdown:\n- Total Lots: ${trade?.total_lots || 0}\n- Already Requested: ${totalRequestedLots}\n- Available: ${availableLots}`;
     }
     return null;
   };
@@ -85,7 +107,6 @@ const CreateExitModal = ({ isOpen, onClose, trade, onSuccess }) => {
     setError(null);
 
     try {
-      // Single request with multiple exits
       const payload = {
         trade: trade.id,
         exits: rows.map((r) => ({
@@ -106,6 +127,7 @@ const CreateExitModal = ({ isOpen, onClose, trade, onSuccess }) => {
         err?.response?.data?.detail ||
         err?.response?.data?.error ||
         err?.response?.data?.message ||
+        JSON.stringify(err?.response?.data) ||
         "Failed to create exit requests.";
       setError(message);
     } finally {
@@ -113,11 +135,29 @@ const CreateExitModal = ({ isOpen, onClose, trade, onSuccess }) => {
     }
   };
 
+  const getStatusBadge = (status) => {
+    const statusColors = {
+      pending: "bg-yellow-100 text-yellow-800",
+      approved: "bg-blue-100 text-blue-800",
+      order_placed: "bg-purple-100 text-purple-800",
+      filled: "bg-green-100 text-green-800",
+      partial_filled: "bg-orange-100 text-orange-800",
+      rejected: "bg-red-100 text-red-800",
+      cancelled: "bg-gray-100 text-gray-800",
+    };
+    
+    return (
+      <span className={`px-2 py-1 text-xs rounded-full ${statusColors[status] || "bg-gray-100 text-gray-800"}`}>
+        {status?.replace('_', ' ')?.toUpperCase() || 'UNKNOWN'}
+      </span>
+    );
+  };
+
   if (!isOpen || !trade) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900 bg-opacity-50 backdrop-blur-sm">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl p-6 relative transform transition-all duration-300 scale-100 font-[Inter] tracking-tight">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl p-6 relative transform transition-all duration-300 scale-100 font-[Inter] tracking-tight max-h-[90vh] overflow-y-auto">
         <h3 className="text-xl font-semibold text-gray-800 border-b pb-2 mb-4">
           Create Exit Requests —{" "}
           <span className="text-blue-600">
@@ -128,33 +168,108 @@ const CreateExitModal = ({ isOpen, onClose, trade, onSuccess }) => {
           </span>
         </h3>
 
-        <div className="mb-4 text-sm text-gray-600">
-          <p>
-            Available Lots to Exit:{" "}
-            <b className="font-bold text-gray-800">{availableLots}</b>
-          </p>
+        {/* Enhanced Trade Summary */}
+        <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+          <div className="grid grid-cols-2 gap-4 text-sm mb-2">
+            <div>
+              <span className="text-gray-600">Total Lots:</span>
+              <span className="ml-2 font-semibold">{trade.total_lots || 0}</span>
+            </div>
+            <div>
+              <span className="text-gray-600">Received Exits:</span>
+              <span className="ml-2 font-semibold">{totalExitedLots}</span>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <div>
+              <span className="text-gray-600">Pending Exits:</span>
+              <span className="ml-2 font-semibold text-orange-600">{totalPendingLots}</span>
+            </div>
+            <div>
+              <span className="text-gray-600">Available to Exit:</span>
+              <span className="ml-2 font-semibold text-green-600">{availableLots}</span>
+            </div>
+          </div>
+          {totalPendingLots > 0 && (
+            <div className="mt-2 p-2 bg-orange-50 border-l-4 border-orange-400 text-sm text-orange-700">
+              <strong>Note:</strong> {totalPendingLots} lots are pending approval and counted against your available limit.
+            </div>
+          )}
         </div>
 
+        {/* Existing Exits */}
+        {exitsLoading ? (
+          <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+            <p className="text-sm text-gray-600">Loading existing exits...</p>
+          </div>
+        ) : existingExits.length > 0 ? (
+          <div className="mb-6">
+            <h4 className="text-lg font-medium mb-3">Existing Exit Requests ({existingExits.length})</h4>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="bg-gray-50">
+                    <th className="border p-2 text-left">Requested</th>
+                    <th className="border p-2 text-left">Received</th>
+                    <th className="border p-2 text-left">Exit Price</th>
+                    <th className="border p-2 text-left">Status</th>
+                    <th className="border p-2 text-left">Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {existingExits.map((exit, idx) => (
+                    <tr key={idx} className="hover:bg-gray-50">
+                      <td className="border p-2">{exit.requested_exit_lots || 0}</td>
+                      <td className="border p-2">
+                        {exit.recieved_lots || 0}
+                        {exit.requested_exit_lots > (exit.recieved_lots || 0) && 
+                         ['pending', 'approved', 'order_placed'].includes(exit.exit_status) && (
+                          <span className="ml-1 text-xs text-orange-600">
+                            (of {exit.requested_exit_lots})
+                          </span>
+                        )}
+                      </td>
+                      <td className="border p-2">${Number(exit.exit_price || 0).toFixed(2)}</td>
+                      <td className="border p-2">{getStatusBadge(exit.exit_status)}</td>
+                      <td className="border p-2">
+                        {exit.requested_at ? new Date(exit.requested_at).toLocaleDateString() : '-'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : (
+          <div className="mb-4 p-3 bg-blue-50 rounded-lg">
+            <p className="text-sm text-blue-800">No existing exit requests found.</p>
+          </div>
+        )}
+
         {error && (
-          <div className="mb-3 p-2 bg-red-100 text-red-700 rounded text-sm">
+          <div className="mb-3 p-3 bg-red-100 text-red-700 rounded text-sm whitespace-pre-wrap">
             {error}
           </div>
         )}
 
+        {/* New Exit Requests Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
+          <h4 className="text-lg font-medium">New Exit Requests</h4>
+          
           <div className="space-y-3">
             {rows.map((row, idx) => (
               <div
                 key={idx}
-                className="grid grid-cols-2 gap-3 items-end bg-gray-50 p-3 rounded"
+                className="grid grid-cols-3 gap-3 items-end bg-gray-50 p-3 rounded"
               >
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1">
-                    Exit Lots
+                    Exit Lots *
                   </label>
                   <input
                     type="number"
                     min="1"
+                    max={availableLots}
                     value={row.requested_exit_lots}
                     onChange={(e) =>
                       updateRow(idx, { requested_exit_lots: e.target.value })
@@ -164,13 +279,15 @@ const CreateExitModal = ({ isOpen, onClose, trade, onSuccess }) => {
                     required
                   />
                 </div>
+                
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1">
-                    Exit Price
+                    Exit Price *
                   </label>
                   <input
                     type="number"
                     step="0.01"
+                    min="0.01"
                     value={row.exit_price}
                     onChange={(e) =>
                       updateRow(idx, { exit_price: e.target.value })
@@ -181,7 +298,7 @@ const CreateExitModal = ({ isOpen, onClose, trade, onSuccess }) => {
                   />
                 </div>
 
-                <div className="col-span-2 flex justify-end">
+                <div className="flex justify-end">
                   <button
                     type="button"
                     onClick={() => removeRow(idx)}
@@ -204,13 +321,17 @@ const CreateExitModal = ({ isOpen, onClose, trade, onSuccess }) => {
               </button>
 
               <div className="text-xs text-gray-700">
-                Total requested this submission:{" "}
-                <strong>{totalRequested}</strong> lots
+                Total requesting: <strong>{totalRequested}</strong> lots
+                {totalRequested > availableLots && (
+                  <span className="ml-2 text-red-600 font-medium">
+                    (Exceeds available: {availableLots})
+                  </span>
+                )}
               </div>
             </div>
           </div>
 
-          <div className="flex justify-end gap-3 pt-2">
+          <div className="flex justify-end gap-3 pt-4 border-t">
             <button
               type="button"
               onClick={onClose}
@@ -225,7 +346,8 @@ const CreateExitModal = ({ isOpen, onClose, trade, onSuccess }) => {
                 loading ||
                 !rows.length ||
                 totalRequested <= 0 ||
-                totalRequested > availableLots
+                totalRequested > availableLots ||
+                exitsLoading
               }
               className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >

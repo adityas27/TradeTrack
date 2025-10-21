@@ -5,7 +5,7 @@ const Footer = () => {
         <div className="flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0">
           {/* Brand */}
           <div className="text-lg font-semibold text-gray-900 dark:text-white">
-            BrainBoard LMS
+            Company Name
           </div>
 
           {/* Links */}

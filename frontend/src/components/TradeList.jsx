@@ -13,12 +13,27 @@ const TradeList = () => {
 
   const API_PAGE_SIZE = 10;
 
+  // fetchTrades handles both paginated responses ({results, count}) and plain arrays like MyTrades
   const fetchTrades = useCallback(async () => {
     try {
       setLoading(true);
       const res = await api.get(`trades/manager/?page=${page}`);
-      setTrades(res.data.results || []);
-      setTotalPages(Math.ceil((res.data.count || 0) / API_PAGE_SIZE) || 1);
+      const data = res.data;
+
+      // If backend returns paginated response
+      if (data && typeof data === "object" && Array.isArray(data.results)) {
+        setTrades(data.results || []);
+        setTotalPages(Math.max(1, Math.ceil((data.count || 0) / API_PAGE_SIZE)));
+      } else if (Array.isArray(data)) {
+        // Some endpoints return an array directly (like my trades)
+        setTrades(data);
+        setTotalPages(1);
+      } else {
+        // fallback - try to pull possible fields
+        setTrades(data || []);
+        setTotalPages(1);
+      }
+
       setError(null);
     } catch (err) {
       console.error("Error fetching trades:", err);
@@ -97,11 +112,22 @@ const TradeList = () => {
   };
 
   const getReceivedLots = (trade) => {
-    const laps = trade.lots_and_price;
-    const sumLegFills = sumBy(laps, (x) => x.fills_received);
+    // several possible shapes are used across endpoints:
+    // - per-leg fills stored inside trade.lots_and_price[].fills_received
+    // - aggregated fields like trade.total_lots, trade.fills_received, or misspelled fills_recivied_for
+    const laps = Array.isArray(trade.lots_and_price) ? trade.lots_and_price : [];
+    const sumLegFills = sumBy(laps, (x) => x.fills_received || x.fills || 0);
     if (sumLegFills > 0) return sumLegFills;
-    if (typeof trade.fills_recivied_for === "number")
-      return trade.fills_recivied_for;
+
+    // prefer total_lots (used in MyTrades) if present
+    if (typeof trade.total_lots === "number") return trade.total_lots;
+
+    // some APIs expose fills_received at top-level
+    if (typeof trade.fills_received === "number") return trade.fills_received;
+
+    // legacy/misspelled field seen in other code
+    if (typeof trade.fills_recivied_for === "number") return trade.fills_recivied_for;
+
     return 0;
   };
 

@@ -10,7 +10,7 @@ const FlyTradeExits = () => {
     const load = async () => {
       try {
         setLoading(true);
-        const res = await api.get("flytrades/spreads/with-exits/");
+        const res = await api.get("flytrades/spreads/exits/all/");
         setItems(Array.isArray(res.data) ? res.data : []);
         setError(null);
       } catch (err) {
